@@ -273,9 +273,6 @@ def main():
                                         help="当前铜价，影响铜排成本计算")
         cabinet_width = st.number_input("柜宽 (米)", value=0.8, min_value=0.1, max_value=2.0,
                                          step=0.1, help="配电柜宽度，影响电缆长度计算")
-        copper_density = st.number_input("铜密度 (g/cm³)", value=8.9, min_value=8.0, max_value=9.0,
-                                          step=0.1, help="紫铜密度，默认8.9")
-
         st.divider()
         st.subheader("📋 快速添加")
         st.caption("从价格库搜索添加元器件")
