@@ -22,6 +22,29 @@ st.set_page_config(
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
 
+# ─── 铜价获取 ─────────────────────────────────────────────
+def fetch_copper_price():
+    """从新浪财经获取沪铜主力合约卖出价"""
+    import urllib.request
+    url = "https://hq.sinajs.cn/list=nf_CU0"
+    req = urllib.request.Request(url, headers={"Referer": "https://finance.sina.com.cn"})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = resp.read().decode('gbk')
+            start = data.index('="') + 2
+            end = data.rindex('"')
+            fields = data[start:end].split(',')
+            sell_price = float(fields[7]) if fields[7] else 0
+            date_str = fields[16] if len(fields) > 16 else ''
+            return {'price': sell_price, 'date': date_str}
+    except Exception:
+        return None
+
+@st.cache_data(ttl=3600)
+def get_cached_copper_price():
+    """缓存1小时的铜价"""
+    return fetch_copper_price()
+
 # ─── 数据加载 ─────────────────────────────────────────────
 @st.cache_data
 def load_price_db():
@@ -269,7 +292,22 @@ def main():
     with st.sidebar:
         st.header("⚙️ 项目参数")
 
-        copper_price = st.number_input("铜价 (元)", value=100, min_value=0, step=1,
+        # ── 实时铜价显示 ──
+        st.subheader("📊 实时铜价（沪铜主力）")
+        copper_info = get_cached_copper_price()
+        if copper_info and copper_info['price'] > 0:
+            st.metric("卖出价", f"¥{copper_info['price']:,.0f}/吨",
+                      help=f"数据日期: {copper_info.get('date', 'N/A')}")
+            st.caption(f"📅 数据日期: {copper_info.get('date', 'N/A')}")
+            if st.button("使用实时价格", key="use_real_copper", use_container_width=True):
+                st.session_state.copper_price_input = copper_info['price']
+                st.rerun()
+        else:
+            st.warning("⚠️ 获取失败，请手动输入")
+        st.divider()
+
+        copper_price = st.number_input("铜价 (元)", value=st.session_state.get('copper_price_input', 100),
+                                        min_value=0, step=1, key="copper_price_input",
                                         help="当前铜价，影响铜排成本计算")
         cabinet_width = st.number_input("柜宽 (米)", value=0.8, min_value=0.1, max_value=2.0,
                                          step=0.1, help="配电柜宽度，影响电缆长度计算")
