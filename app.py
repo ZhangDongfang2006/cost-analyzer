@@ -12,6 +12,7 @@ import os
 import re
 import io
 from pathlib import Path
+import openpyxl
 
 # ─── 配置 ───────────────────────────────────────────────
 st.set_page_config(
@@ -509,6 +510,126 @@ def main():
                         st.rerun()
                     else:
                         st.warning("请填写型号和数量")
+
+            # 批量导入
+            with st.expander("📦 批量导入", expanded=False):
+                import_mode = st.radio("导入方式", ["📄 Excel文件", "📝 文本粘贴"], horizontal=True)
+
+                preview_data = []
+
+                if import_mode == "📄 Excel文件":
+                    uploaded = st.file_uploader("上传Excel文件", type=["xlsx", "xls"], key="batch_excel")
+                    if uploaded:
+                        try:
+                            wb = openpyxl.load_workbook(uploaded, read_only=True, data_only=True)
+                            ws = wb.active
+                            rows = list(ws.iter_rows(max_row=16, values_only=False))
+                            wb.close()
+
+                            # 识别列：找含"型号"的列头作为型号列(C)，含"数量"的列头作为数量列(D)，含"名称"的列头作为名称列(B)
+                            header = rows[0] if rows else []
+                            header_text = [str(c.value or '') for c in header]
+
+                            col_model = None
+                            col_qty = None
+                            col_name = None
+                            has_header = False
+
+                            for ci, h in enumerate(header_text):
+                                if '型号' in h:
+                                    col_model = ci; has_header = True
+                                if '数量' in h:
+                                    col_qty = ci; has_header = True
+                                if '名称' in h:
+                                    col_name = ci; has_header = True
+
+                            if not has_header:
+                                col_name = 1; col_model = 2; col_qty = 3  # B=1, C=2, D=3
+                                data_rows = rows[:15]
+                            else:
+                                data_rows = rows[1:16]
+
+                            for row in data_rows:
+                                vals = [c.value for c in row]
+                                model = str(vals[col_model] or '').strip() if col_model is not None and col_model < len(vals) else ''
+                                qty = vals[col_qty] if col_qty is not None and col_qty < len(vals) else 0
+                                name = str(vals[col_name] or '').strip() if col_name is not None and col_name < len(vals) else ''
+                                if model:
+                                    try:
+                                        qty = int(float(qty))
+                                    except (ValueError, TypeError):
+                                        qty = 1
+                                    match = lookup_price(model, db)
+                                    preview_data.append({
+                                        'name': name or (match['name'] if match else ''),
+                                        'model': model,
+                                        'qty': qty,
+                                        'unit_price': match['unit_price'] if match else 0,
+                                        'matched': match is not None,
+                                    })
+                        except Exception as e:
+                            st.error(f"读取Excel失败: {e}")
+
+                else:  # 文本粘贴
+                    text = st.text_area("每行一个元器件（Tab/空格分隔）", height=150,
+                                        placeholder="名称\t型号\t数量\n型号\t数量", key="batch_text")
+                    if text.strip():
+                        for line in text.strip().split('\n'):
+                            parts = re.split(r'[\t]+|[ \t]{2,}', line.strip())
+                            parts = [p.strip() for p in parts if p.strip()]
+                            if not parts:
+                                continue
+                            if len(parts) >= 3:
+                                name, model, qty_str = parts[0], parts[1], parts[2]
+                            elif len(parts) == 2:
+                                name, model, qty_str = '', parts[0], parts[1]
+                            else:
+                                continue
+                            try:
+                                qty = int(float(qty_str))
+                            except (ValueError, TypeError):
+                                continue
+                            match = lookup_price(model, db)
+                            preview_data.append({
+                                'name': name or (match['name'] if match else ''),
+                                'model': model,
+                                'qty': qty,
+                                'unit_price': match['unit_price'] if match else 0,
+                                'matched': match is not None,
+                            })
+
+                if preview_data:
+                    st.subheader(f"📋 预览导入 ({len(preview_data)} 个元器件)")
+                    pdf = []
+                    for i, item in enumerate(preview_data):
+                        pdf.append({
+                            '序号': i + 1,
+                            '名称': item['name'],
+                            '型号': item['model'],
+                            '数量': item['qty'],
+                                    '匹配单价': f"¥{item['unit_price']:.0f}" if item['matched'] else '-',
+                            '状态': '✅已匹配' if item['matched'] else '⚠️未找到',
+                        })
+                    st.dataframe(pd.DataFrame(pdf), use_container_width=True, hide_index=True)
+
+                    if st.button("✅ 确认导入", type="primary", use_container_width=True, key="batch_confirm"):
+                        for item in preview_data:
+                            current = extract_current_from_model(item['model'])
+                            match = lookup_price(item['model'], db)
+                            component = {
+                                'model': item['model'],
+                                'name': item['name'] or '未知',
+                                'qty': item['qty'],
+                                'current': current,
+                                'type': '其他',
+                                'unit_price': item['unit_price'],
+                                'retail_price': match['retail_price'] if match else 0,
+                                'brand': match['brand'] if match else '未找到',
+                                'matched': item['matched'],
+                            }
+                            st.session_state.cabinet_list[idx]['components'].append(component)
+                        st.success(f"✅ 已导入 {len(preview_data)} 个元器件到 {cab['name']}")
+                        st.rerun()
 
             # 显示元器件清单
             components = cab['components']
