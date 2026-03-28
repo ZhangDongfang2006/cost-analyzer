@@ -363,7 +363,7 @@ def main():
                 is_active = (i == st.session_state.active_cabinet_idx)
                 border = "🔴" if is_active else "⚪"
 
-                col1, col2, col3, col4, col5, col6 = st.columns([0.5, 2, 1.5, 1, 1, 0.8])
+                col1, col2, col3, col4, col5, col6, col7 = st.columns([0.5, 2, 1.5, 1, 1, 0.8, 0.8])
                 with col1:
                     st.markdown(border)
                 with col2:
@@ -377,6 +377,14 @@ def main():
                 with col5:
                     st.text(f"{len(cab['components'])}个元器件")
                 with col6:
+                    if st.button("📋", key=f"copy_cab_{i}"):
+                        import copy
+                        new_cabinet = copy.deepcopy(st.session_state.cabinet_list[i])
+                        new_cabinet['name'] = st.session_state.cabinet_list[i]['name'] + '(副本)'
+                        st.session_state.cabinet_list.append(new_cabinet)
+                        st.session_state.active_cabinet_idx = len(st.session_state.cabinet_list) - 1
+                        st.rerun()
+                with col7:
                     if st.button("🗑️", key=f"del_cab_{i}"):
                         st.session_state.cabinet_list.pop(i)
                         if st.session_state.active_cabinet_idx >= len(st.session_state.cabinet_list):
