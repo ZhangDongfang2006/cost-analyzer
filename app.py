@@ -80,18 +80,52 @@ def lookup_price(model: str, db: list) -> dict:
     return None
 
 def extract_current_from_model(model: str) -> int:
-    """从型号中提取额定电流"""
-    # 常见模式: TMD 63, TMD 100, TMD 160, TMD 250, TMA 400, TMA 500, TMA 630
-    # 框架: E1C630, E1C800, E1C1000, E1C1250
-    patterns = [
-        r'TMD\s*(\d+)', r'TMA\s*(\d+)',
-        r'E1C\s*(\d+)', r'ETU.*?(\d{3,4})',
-        r'(\d{3,4})A',
-    ]
-    for pat in patterns:
-        m = re.search(pat, model, re.IGNORECASE)
-        if m:
-            return int(m.group(1))
+    """从型号中提取额定电流（支持多品牌断路器）"""
+    # 框架断路器
+    m = re.search(r'E1C\s*(\d+)', model, re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    # 3WL系列（西门子框架）：缩写映射
+    m = re.search(r'3WL\w*N(\d{2})', model, re.IGNORECASE)
+    if m:
+        wl_map = {'08': 800, '10': 1000, '12': 1250, '16': 1600, '20': 2000}
+        return wl_map.get(m.group(1), 0)
+    # MT系列（施耐德框架）
+    m = re.search(r'MT\s*(\d+)', model, re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    # AN系列（LS产电框架）
+    m = re.search(r'AN-\d+D\d+-(\d+)A', model, re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    # 塑壳断路器
+    m = re.search(r'TM[DA]\s*(\d+)', model, re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    # NSX系列（施耐德塑壳，必须在TM脱扣器之前匹配）
+    m = re.search(r'NSX\s*(\d+)', model, re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    # 3VL系列（西门子塑壳）
+    m = re.search(r'3VL\w*(\d{3})', model, re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    # CB系列（GE塑壳）
+    m = re.search(r'CB\w*/(\d+)A', model, re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    # CM1系列（常熟塑壳）
+    m = re.search(r'CM1[-/](\d+)', model, re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    # NM1系列（正泰塑壳）
+    m = re.search(r'NM1[-/](\d+)', model, re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    # 兜底：末尾数字+A
+    m = re.search(r'(\d{3,4})A', model)
+    if m:
+        return int(m.group(1))
     return 0
 
 def get_breaker_type(name: str) -> str:
@@ -301,13 +335,17 @@ def main():
 
             col_a, col_b = st.columns([1, 1])
             with col_a:
+                # 自动从型号提取电流并填入输入框
+                auto_current = 0
+                if model_input:
+                    auto_current = extract_current_from_model(model_input)
+                if auto_current > 0 and st.session_state.get('current_input', 0) == 0:
+                    st.session_state.current_input = auto_current
                 current_input = st.number_input("额定电流 (A)", min_value=0, value=0,
                                                 key="current_input",
                                                 help="留空则自动从型号提取")
-                if current_input == 0 and model_input:
-                    auto_current = extract_current_from_model(model_input)
-                    if auto_current > 0:
-                        st.caption(f"💡 自动识别电流: {auto_current}A")
+                if auto_current > 0 and current_input == auto_current:
+                    st.caption(f"💡 已自动识别电流: {auto_current}A（可手动修改）")
 
             with col_b:
                 breaker_type = st.selectbox("类型", ["塑壳断路器", "框架断路器", "电流互感器",
