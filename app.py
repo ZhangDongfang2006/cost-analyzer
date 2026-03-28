@@ -292,23 +292,18 @@ def main():
     with st.sidebar:
         st.header("⚙️ 项目参数")
 
-        # ── 实时铜价显示 ──
+        # ── 实时铜价（自动获取） ──
         st.subheader("📊 实时铜价（沪铜主力）")
         copper_info = get_cached_copper_price()
         if copper_info and copper_info['price'] > 0:
-            st.metric("卖出价", f"¥{copper_info['price']:,.0f}/吨",
+            copper_price = copper_info['price'] / 1000  # 元/吨 → 元
+            st.metric("卖出价", f"¥{copper_info['price']:,.0f}/吨（¥{copper_price:.1f}）",
                       help=f"数据日期: {copper_info.get('date', 'N/A')}")
             st.caption(f"📅 数据日期: {copper_info.get('date', 'N/A')}")
-            if st.button("使用实时价格", key="use_real_copper", use_container_width=True):
-                st.session_state.copper_price_input = copper_info['price']
-                st.rerun()
         else:
-            st.warning("⚠️ 获取失败，请手动输入")
+            copper_price = 100  # 默认100,000元/吨
+            st.warning(f"⚠️ 铜价获取失败，使用默认值: ¥{copper_price}/单位（即¥{copper_price*1000:,.0f}/吨）")
         st.divider()
-
-        copper_price = st.number_input("铜价 (元)", value=st.session_state.get('copper_price_input', 100),
-                                        min_value=0, step=1, key="copper_price_input",
-                                        help="当前铜价，影响铜排成本计算")
         cabinet_width = st.number_input("柜宽 (米)", value=0.8, min_value=0.1, max_value=2.0,
                                          step=0.1, help="配电柜宽度，影响电缆长度计算")
         st.divider()
@@ -459,14 +454,14 @@ def main():
         if not st.session_state.components:
             st.info("👈 请先在'元器件清单'中添加元器件并点击'计算铜排成本'")
         elif st.session_state.get('show_calc'):
-            run_cost_analysis(st.session_state.components, copper_price, cabinet_width, copper_density, db)
+            run_cost_analysis(st.session_state.components, copper_price, cabinet_width, db)
 
     with tab3:
         show_instructions()
 
-def run_cost_analysis(components: list, copper_price: float, cabinet_width: float,
-                     copper_density: float, db: list):
+def run_cost_analysis(components: list, copper_price: float, cabinet_width: float, db: list):
     """执行成本分析"""
+    copper_density = 8.9
     st.header("📊 成本分析报告")
 
     cable_params = load_breaker_cable_params()
