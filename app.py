@@ -480,23 +480,22 @@ def main():
                     qty_input = st.number_input("数量", min_value=0, value=1, key="qty_input")
 
                 with col3:
-                    name_input = st.text_input("名称", key="name_input", placeholder="自动填充")
+                    auto_name = ''
                     if model_input:
                         match = lookup_price(model_input, db)
                         if match:
-                            st.session_state.name_input = match['name']
+                            auto_name = match['name']
+                    name_input = st.text_input("名称", key="name_input", placeholder="自动填充",
+                                               value=auto_name if auto_name else st.session_state.get('name_input', ''))
 
                 col_a, col_b = st.columns([1, 1])
                 with col_a:
-                    auto_current = 0
-                    if model_input:
-                        auto_current = extract_current_from_model(model_input)
-                    if auto_current > 0 and st.session_state.get('current_input', 0) == 0:
-                        st.session_state.current_input = auto_current
-                    current_input = st.number_input("额定电流 (A)", min_value=0, value=0,
+                    auto_current = extract_current_from_model(model_input) if model_input else 0
+                    default_current = auto_current if auto_current > 0 else st.session_state.get('current_input', 0)
+                    current_input = st.number_input("额定电流 (A)", min_value=0, value=default_current,
                                                     key="current_input")
-                    if auto_current > 0 and current_input == auto_current:
-                        st.caption(f"💡 自动识别: {auto_current}A")
+                    if auto_current > 0:
+                        st.caption(f"💡 自动识别: {auto_current}A（可手动修改）")
 
                 with col_b:
                     breaker_type = st.selectbox("类型", ["塑壳断路器", "框架断路器", "电流互感器",
