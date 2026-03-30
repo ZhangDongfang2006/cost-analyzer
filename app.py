@@ -491,21 +491,24 @@ def main():
 
                 with col3:
                     auto_name = ''
+                    selected_name = st.session_state.get('_selected_name', '')
+                    if selected_name:
+                        st.session_state.pop('_selected_name', None)
                     if model_input:
                         match = lookup_price(model_input, db)
                         if match:
                             auto_name = match['name']
-                    selected_name = st.session_state.get('_selected_name', '')
-                    if selected_name:
-                        st.session_state.pop('_selected_name', None)
-                    name_input = st.text_input("名称", key="name_input", placeholder="自动填充",
-                                               value=selected_name if selected_name else (auto_name if auto_name else ''))
+                    # 只在有新值时更新name_input
+                    if auto_name:
+                        st.session_state.name_input = auto_name
+                    name_input = st.text_input("名称", key="name_input", placeholder="自动填充")
 
                 col_a, col_b = st.columns([1, 1])
                 with col_a:
                     auto_current = extract_current_from_model(model_input) if model_input else 0
-                    default_current = auto_current if auto_current > 0 else 0
-                    current_input = st.number_input("额定电流 (A)", min_value=0, value=default_current,
+                    if auto_current > 0:
+                        st.session_state.current_input = auto_current
+                    current_input = st.number_input("额定电流 (A)", min_value=0,
                                                     key="current_input")
                     if auto_current > 0:
                         st.caption(f"💡 自动识别: {auto_current}A（可手动修改）")
