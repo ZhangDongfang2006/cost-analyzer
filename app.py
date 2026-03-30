@@ -462,18 +462,25 @@ def main():
 
             # 添加元器件表单
             with st.expander("➕ 添加元器件", expanded=True):
+                # 搜索建议（在widget之前处理选择逻辑）
+                selected_model = st.session_state.get('_selected_model', '')
+                if selected_model:
+                    st.session_state.pop('_selected_model', None)
+
                 col1, col2, col3 = st.columns([2, 1, 1])
 
                 with col1:
                     model_input = st.text_input("型号", key="model_input",
-                                                placeholder="输入元器件型号")
+                                                placeholder="输入元器件型号",
+                                                value=selected_model if selected_model else st.session_state.get('model_input', ''))
                     if model_input:
                         suggestions = [item for item in db
                                        if model_input.upper() in str(item.get('型号', '')).upper()][:5]
                         if suggestions:
                             for s in suggestions:
                                 if st.button(f"选择: {s.get('型号', '')}", key=f"sel_{s.get('型号', '')}"):
-                                    st.session_state.model_input = s.get('型号', '')
+                                    st.session_state._selected_model = s.get('型号', '')
+                                    st.session_state._selected_name = s.get('名称', '')
                                     st.rerun()
 
                 with col2:
@@ -485,8 +492,11 @@ def main():
                         match = lookup_price(model_input, db)
                         if match:
                             auto_name = match['name']
+                    selected_name = st.session_state.get('_selected_name', '')
+                    if selected_name:
+                        st.session_state.pop('_selected_name', None)
                     name_input = st.text_input("名称", key="name_input", placeholder="自动填充",
-                                               value=auto_name if auto_name else st.session_state.get('name_input', ''))
+                                               value=selected_name if selected_name else (auto_name if auto_name else st.session_state.get('name_input', '')))
 
                 col_a, col_b = st.columns([1, 1])
                 with col_a:
@@ -502,7 +512,7 @@ def main():
                                                          "数显仪表", "其他"], key="type_input")
 
                 if st.button("✅ 添加到清单", type="primary", use_container_width=True):
-                    if model_input and qty_input > 0:
+                    if model_input:
                         match = lookup_price(model_input, db)
                         current = current_input if current_input > 0 else extract_current_from_model(model_input)
                         component = {
