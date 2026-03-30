@@ -466,13 +466,16 @@ def main():
                 selected_model = st.session_state.get('_selected_model', '')
                 if selected_model:
                     st.session_state.pop('_selected_model', None)
+                    st.session_state.pop('model_input', None)
+                    st.session_state.pop('name_input', None)
+                    st.session_state.pop('current_input', None)
 
                 col1, col2, col3 = st.columns([2, 1, 1])
 
                 with col1:
                     model_input = st.text_input("型号", key="model_input",
                                                 placeholder="输入元器件型号",
-                                                value=selected_model if selected_model else st.session_state.get('model_input', ''))
+                                                value=selected_model if selected_model else '')
                     if model_input:
                         suggestions = [item for item in db
                                        if model_input.upper() in str(item.get('型号', '')).upper()][:5]
@@ -496,12 +499,12 @@ def main():
                     if selected_name:
                         st.session_state.pop('_selected_name', None)
                     name_input = st.text_input("名称", key="name_input", placeholder="自动填充",
-                                               value=selected_name if selected_name else (auto_name if auto_name else st.session_state.get('name_input', '')))
+                                               value=selected_name if selected_name else (auto_name if auto_name else ''))
 
                 col_a, col_b = st.columns([1, 1])
                 with col_a:
                     auto_current = extract_current_from_model(model_input) if model_input else 0
-                    default_current = auto_current if auto_current > 0 else st.session_state.get('current_input', 0)
+                    default_current = auto_current if auto_current > 0 else 0
                     current_input = st.number_input("额定电流 (A)", min_value=0, value=default_current,
                                                     key="current_input")
                     if auto_current > 0:
