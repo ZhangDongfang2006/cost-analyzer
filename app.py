@@ -64,15 +64,28 @@ def load_price_db():
 
 @st.cache_data
 def load_copper_specs():
-    """加载铜排规格映射表"""
-    return [
-        (0,    500,  0.18),
-        (500,  755,  0.24),
-        (755,  990,  0.36),
-        (990,  1160, 0.48),
-        (1160, 1500, 0.60),
-        (1500, 99999, 0.72),
+    """加载铜排规格映射表（实际工程载流量经验值，按载流量从小到大排序）"""
+    raw = [
+        {'spec': '15×2',   'width': 15,  'thickness': 2,  'area_mm2': 30,   'current': 125},
+        {'spec': '15×3',   'width': 15,  'thickness': 3,  'area_mm2': 45,   'current': 185},
+        {'spec': '20×3',   'width': 20,  'thickness': 3,  'area_mm2': 60,   'current': 245},
+        {'spec': '25×3',   'width': 25,  'thickness': 3,  'area_mm2': 75,   'current': 305},
+        {'spec': '20×4',   'width': 20,  'thickness': 4,  'area_mm2': 80,   'current': 320},
+        {'spec': '25×4',   'width': 25,  'thickness': 4,  'area_mm2': 100,  'current': 370},
+        {'spec': '30×3',   'width': 30,  'thickness': 3,  'area_mm2': 90,   'current': 355},
+        {'spec': '30×4',   'width': 30,  'thickness': 4,  'area_mm2': 120,  'current': 420},
+        {'spec': '40×4',   'width': 40,  'thickness': 4,  'area_mm2': 160,  'current': 560},
+        {'spec': '40×5',   'width': 40,  'thickness': 5,  'area_mm2': 200,  'current': 615},
+        {'spec': '50×5',   'width': 50,  'thickness': 5,  'area_mm2': 250,  'current': 755},
+        {'spec': '50×6',   'width': 50,  'thickness': 6,  'area_mm2': 300,  'current': 840},
+        {'spec': '60×6',   'width': 60,  'thickness': 6,  'area_mm2': 360,  'current': 990},
+        {'spec': '60×8',   'width': 60,  'thickness': 8,  'area_mm2': 480,  'current': 1160},
+        {'spec': '80×8',   'width': 80,  'thickness': 8,  'area_mm2': 640,  'current': 1490},
+        {'spec': '80×10',  'width': 80,  'thickness': 10, 'area_mm2': 800,  'current': 1670},
+        {'spec': '100×10', 'width': 100, 'thickness': 10, 'area_mm2': 1000, 'current': 2030},
+        {'spec': '120×10', 'width': 120, 'thickness': 10, 'area_mm2': 1200, 'current': 2330},
     ]
+    return sorted(raw, key=lambda x: x['current'])
 
 @st.cache_data
 def load_breaker_cable_params():
@@ -125,27 +138,26 @@ def extract_current_from_model(model: str) -> int:
     if m: return int(m.group(1))
     return 0
 
-def get_copper_spec_by_current(total_current: float) -> float:
+def get_copper_spec_by_current(total_current: float) -> dict:
+    """根据总电流，找到载流量 >= 总电流的最小铜排规格"""
     specs = load_copper_specs()
-    for low, high, spec in specs:
-        if low <= total_current < high:
+    for spec in specs:
+        if spec['current'] >= total_current:
             return spec
-    return 0.72
+    return specs[-1]  # 超过最大规格，返回120×10
 
 def get_copper_threshold_by_current(total_current: float) -> float:
-    thresholds = [500, 755, 990, 1160, 1500]
-    for i, t in enumerate(thresholds):
-        if total_current < t:
-            return thresholds[i-1] if i > 0 else thresholds[0]
-    return 1500
+    """返回选定铜排的载流量值(A)，用于成本计算"""
+    spec = get_copper_spec_by_current(total_current)
+    return spec['current']
 
 def calc_cable_cost(breaker_type: str, current: int, qty: int,
                     cable_params: dict, copper_price: float, cabinet_width: float) -> float:
     if qty <= 0 or current <= 0:
         return 0.0
     if breaker_type == 'frame':
-        copper_spec = get_copper_spec_by_current(current)
-        return 2.5 * qty * copper_spec * copper_price * 8.9 * 3
+        spec = get_copper_spec_by_current(current)
+        return 2.5 * qty * spec['area_mm2'] * copper_price * 8.9 * 3
     else:
         cable_width = cable_params.get(current, 0)
         if cable_width == 0:
@@ -728,7 +740,7 @@ def run_project_report(cabinet_list: list, copper_price: float, db: list):
                 - 出线路数: {result['outgoing_circuits']}路
                 - 降容系数: {result['derate']}
                 - 降容后电流: {result['reduced_current']:,.0f}A
-                - 铜排规格: TMY-{cd['copper_spec']*100:.0f}×{cd['copper_spec']*100:.0f}
+                - 铜排规格: TMY-{cd['copper_spec']['width']}×{cd['copper_spec']['thickness']}
                 - 三相铜排: ¥{cd['phase_cost']:,.0f}
                 - 零线: ¥{cd['neutral_cost']:,.0f}
                 - 地线: ¥{cd['ground_cost']:,.0f}
