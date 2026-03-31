@@ -577,6 +577,15 @@ def main():
                     else:
                         st.warning("请填写型号和数量")
 
+            # 价格库浏览
+            with st.expander("📚 价格库浏览", expanded=False):
+                price_search = st.text_input("搜索型号或名称", key="price_db_search", placeholder="输入关键词...")
+                price_df = price_db.get_all_prices()
+                if price_search:
+                    mask = price_df['型号'].str.contains(price_search, na=False) | price_df['名称'].str.contains(price_search, na=False)
+                    price_df = price_df[mask]
+                st.dataframe(price_df[['型号', '名称', '单价', '品牌']].head(20), use_container_width=True, hide_index=True)
+
             # 批量导入
             with st.expander("📦 批量导入", expanded=False):
                 import_mode = st.radio("导入方式", ["📄 Excel文件", "📝 文本粘贴"], horizontal=True)
