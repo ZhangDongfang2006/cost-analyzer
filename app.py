@@ -52,8 +52,7 @@ def get_cached_copper_price():
     return fetch_copper_price()
 
 # ─── 数据加载 ─────────────────────────────────────────────
-@st.cache_data
-def load_price_db():
+@st.cache_data(ttl=300)  # 5分钟自动刷新
     """加载产品价格数据库"""
     db_path = DATA_DIR / "price_db.json"
     if db_path.exists():
