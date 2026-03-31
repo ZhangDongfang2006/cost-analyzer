@@ -919,12 +919,13 @@ def main():
                 if unset:
                     st.error(f"⚠️ 有 {len(unset)} 个元器件类型未设置，将无法正确计算成本！请返回编辑。")
 
-                # 删除按钮
-                cols = st.columns(min(len(components), 10))
-                for i, col in enumerate(cols):
-                    if i < len(components):
+                # 每行删除按钮
+                if components:
+                    del_cols = st.columns(len(components))
+                    for i, del_col in enumerate(del_cols):
                         comp = components[i]
-                        if col.button(f"🗑️{comp['model'][:12]}", key=f"del_{idx}_{i}"):
+                        label = comp['model'][:8] if len(comp['model']) > 8 else comp['model']
+                        if del_col.button(f"🗑️", key=f"del_{idx}_{i}", help=f"删除 {comp['model']}"):
                             st.session_state.cabinet_list[idx]['components'].pop(i)
                             st.rerun()
 
