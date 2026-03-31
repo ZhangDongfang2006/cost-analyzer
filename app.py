@@ -81,6 +81,19 @@ def load_breaker_cable_params():
 
 # ─── 核心计算函数 ─────────────────────────────────────────
 
+def lookup_price_by_name(name: str, db: list) -> dict:
+    """根据名称查找价格"""
+    name = str(name).strip()
+    for item in db:
+        if str(item.get('名称', '')).strip() == name:
+            return {
+                'name': item.get('名称', ''),
+                'unit_price': float(item.get('单价', 0) or 0),
+                'retail_price': float(item.get('面价', 0) or 0),
+                'brand': item.get('产地/厂家', ''),
+            }
+    return None
+
 def lookup_price(model: str, db: list) -> dict:
     """根据型号查找价格"""
     model = str(model).strip()
@@ -217,15 +230,26 @@ def calc_single_cabinet(cabinet: dict, copper_price: float, db: list) -> dict:
     else:
         derate = 1.0
 
+    # 数显仪表电缆费用：柜宽×4×铜价×8.9 + 柜宽×0.8×铜价×8.9
+    has_meter = any('仪表' in c.get('type', '') or '数显' in c.get('type', '') for c in components)
+    if has_meter:
+        meter_cable_cost = width * 4 * copper_price * 8.9 + width * 0.8 * copper_price * 8.9
+        total_cable_cost += meter_cable_cost
+
     reduced_current = total_current * derate
     copper_detail = calc_copper_busbar_cost(total_cable_cost, reduced_current, copper_price)
 
-    # 3. 辅助材料
-    accessory_cost = calc_accessory_cost(outgoing_circuits)
+    # 3. 辅助材料：从价格库查找
+    accessory_name = f"辅助材料（出线柜，{outgoing_circuits}路出线）"
+    accessory_match = lookup_price_by_name(accessory_name, db)
+    if accessory_match:
+        accessory_cost = accessory_match['unit_price']
+    else:
+        accessory_cost = calc_accessory_cost(outgoing_circuits)  # fallback 1926
 
-    # 4. 箱体费用: 2200 + 400×元器件总数量
-    total_qty = sum(c['qty'] for c in components)
-    cabinet_cost = 2200 + 400 * total_qty
+    # 4. 箱体费用: 2200 + 400×断路器数量（只算断路器）
+    breaker_count = sum(c['qty'] for c in components if '断路器' in c.get('type', ''))
+    cabinet_cost = 2200 + 400 * breaker_count
 
     # 5. 小计（不含利润）
     subtotal = total_comp_cost + copper_detail['total_cost'] + accessory_cost + cabinet_cost
