@@ -1340,7 +1340,7 @@ def run_project_report(cabinet_list: list, copper_price: float):
             copper_spec_str = f"TMY-{cd['copper_spec']['spec']}"
             table_data.append({
                 '序号': idx,
-                '名称': '铜排',
+                '名称': '铜排和电缆',
                 '型号': copper_spec_str,
                 '数量': '—',
                 '单价(元)': '—',
@@ -1444,7 +1444,7 @@ def run_project_report(cabinet_list: list, copper_price: float):
                 '类型': r['type'],
                 '柜宽(m)': r['width'],
                 '元器件': f"¥{r['comp_cost']:,.0f}",
-                '铜排': f"¥{r['copper_cost']:,.0f}",
+                '铜排和电缆': f"¥{r['copper_cost']:,.0f}",
                 '辅助材料': f"¥{r['accessory_cost']:,.0f}",
                 '箱体': f"¥{r['cabinet_cost']:,.0f}",
                 '成本小计': f"¥{r['total_cost']:,.0f}",
@@ -1453,7 +1453,7 @@ def run_project_report(cabinet_list: list, copper_price: float):
             })
         summary_data.append({
             '柜号': '合计', '类型': '', '柜宽(m)': '',
-            '元器件': '', '铜排': '', '辅助材料': '', '箱体': '',
+            '元器件': '', '铜排和电缆': '', '辅助材料': '', '箱体': '',
             '成本小计': f"¥{project_total_cost:,.0f}",
             '成套费': f"¥{project_total_profit:,.0f}",
             '合计': f"¥{final_price:,.0f}",
