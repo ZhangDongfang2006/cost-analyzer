@@ -536,12 +536,11 @@ def main():
                         preset_type = ''
                     else:
                         type_options = ["塑壳断路器", "框架断路器", "电流互感器", "数显仪表", "其他"]
-                        # 用 value 而非 index 来动态设置默认值
-                        current_type = st.session_state.get('type_input', auto_type if auto_type in type_options else type_options[0])
-                        # 如果有新的自动推断且和当前不同，更新
-                        if auto_type and auto_type in type_options and current_type != auto_type:
-                            st.session_state.type_input = auto_type
-                        preset_type = st.selectbox("类型", type_options, key="type_input")
+                        default_type = auto_type if auto_type in type_options else type_options[0]
+                        # 清除旧session_state确保动态更新
+                        if 'type_input' in st.session_state and st.session_state.type_input != default_type:
+                            del st.session_state.type_input
+                        preset_type = st.selectbox("类型", type_options, index=type_options.index(default_type), key="type_input")
                         if auto_type and auto_type not in type_options:
                             st.caption(f"💡 价格库类型: {auto_type}，请选择最接近的类型或自定义")
                         custom_type = ''
