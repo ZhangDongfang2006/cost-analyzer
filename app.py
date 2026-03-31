@@ -1335,19 +1335,73 @@ def run_project_report(cabinet_list: list, copper_price: float):
                 })
                 idx += 1
 
-            # 铜排行
+            # 铜排和电缆明细行
             cd = result['copper_detail']
-            copper_spec_str = f"TMY-{cd['copper_spec']['spec']}"
+            spec = cd['copper_spec']
+            copper_spec_str = f"TMY-{spec['spec']}"
+            total_current = cd['total_current']
+
+            # 三相铜排
             table_data.append({
-                '序号': idx,
-                '名称': '铜排和电缆',
-                '型号': copper_spec_str,
-                '数量': '—',
-                '单价(元)': '—',
-                '金额(元)': f"¥{result['copper_cost']:,.0f}",
-                '品牌': '江西/金来',
+                '序号': idx, '名称': '铜排和电缆',
+                '型号': f"三相铜排 {copper_spec_str}×7m",
+                '数量': '—', '单价(元)': '—',
+                '金额(元)': f"¥{cd['phase_cost']:,.0f}", '品牌': '江西/金来',
             })
             idx += 1
+
+            # 零线
+            neutral_spec = f"TMY-{spec['width']//2}×{spec['thickness']}" if spec['width'] > 10 else f"TMY-{spec['spec']}半"
+            table_data.append({
+                '序号': idx, '名称': '铜排和电缆',
+                '型号': f"零线 {neutral_spec}×2m",
+                '数量': '—', '单价(元)': '—',
+                '金额(元)': f"¥{cd['neutral_cost']:,.0f}", '品牌': '江西/金来',
+            })
+            idx += 1
+
+            # 地线
+            ground_spec = f"TMY-{spec['width']//4}×{spec['thickness']}" if spec['width'] > 20 else f"TMY-{spec['spec']}1/4"
+            table_data.append({
+                '序号': idx, '名称': '铜排和电缆',
+                '型号': f"地线 {ground_spec}×2m",
+                '数量': '—', '单价(元)': '—',
+                '金额(元)': f"¥{cd['ground_cost']:,.0f}", '品牌': '江西/金来',
+            })
+            idx += 1
+
+            # 电缆费用（各断路器）
+            components = cab['components']
+            width = cab.get('width', 0.8)
+            for comp in components:
+                if comp['qty'] <= 0 or comp.get('current', 0) <= 0:
+                    continue
+                breaker_type = 'frame' if '框架' in comp.get('type', '') else 'mccb'
+                if breaker_type == 'frame':
+                    frame_spec = get_copper_spec_by_current(comp['current'])
+                    cable_str = f"电缆 {comp['model']} 铜排{frame_spec['spec']}×2.5m×{comp['qty']}"
+                else:
+                    cable_params = load_breaker_cable_params()
+                    cable_width = cable_params.get(comp['current'], 0)
+                    cable_str = f"电缆 {comp['model']} {comp['current']}A {cable_width}mm²×{comp['qty']}"
+                # 金额在calc_cable_cost中已计算，这里用cable_cost总计分摊
+                table_data.append({
+                    '序号': idx, '名称': '铜排和电缆',
+                    '型号': cable_str,
+                    '数量': '—', '单价(元)': '—',
+                    '金额(元)': '—', '品牌': '',
+                })
+                idx += 1
+
+            # 电缆合计行
+            if cd['cable_cost'] > 0:
+                table_data.append({
+                    '序号': idx, '名称': '铜排和电缆',
+                    '型号': f'电缆合计（降容后电流{total_current}A）',
+                    '数量': '—', '单价(元)': '—',
+                    '金额(元)': f"¥{cd['cable_cost']:,.0f}", '品牌': '',
+                })
+                idx += 1
 
             # 辅助材料行
             table_data.append({
