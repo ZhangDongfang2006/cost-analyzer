@@ -12,6 +12,7 @@ import os
 import re
 import io
 from pathlib import Path
+from datetime import datetime
 import openpyxl
 
 # ─── 配置 ───────────────────────────────────────────────
@@ -818,6 +819,48 @@ def main():
             st.code("""不含税报价 = 总成本 + 总利润
 含税报价 = 不含税报价 × 1.13""", language="text")
 
+# ─── 计算日志 ───────────────────────────────────────────────
+LOG_FILE = Path(__file__).parent / "data" / "calc_logs.jsonl"
+MAX_LOGS = 1500
+
+def save_calc_log(copper_price, cabinets, results):
+    """保存计算日志到JSONL文件，最多保留1500条"""
+    LOG_FILE.parent.mkdir(exist_ok=True)
+    entry = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "copper_price": copper_price,
+        "cabinets": []
+    }
+    for cab, result in zip(cabinets, results):
+        entry["cabinets"].append({
+            "name": cab.get("name", ""),
+            "type": cab.get("type", ""),
+            "width": cab.get("width", 0),
+            "components": cab.get("components", []),
+            "result": result
+        })
+
+    # 读取现有日志
+    logs = []
+    if LOG_FILE.exists():
+        with open(LOG_FILE, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        logs.append(json.loads(line))
+                    except:
+                        pass
+
+    logs.append(entry)
+    if len(logs) > MAX_LOGS:
+        logs = logs[-MAX_LOGS:]
+
+    with open(LOG_FILE, 'w', encoding='utf-8') as f:
+        for log in logs:
+            f.write(json.dumps(log, ensure_ascii=False) + '\n')
+
+
 def run_project_report(cabinet_list: list, copper_price: float, db: list):
     """生成项目成本分析报告"""
     project_name = st.session_state.project_name or "未命名项目"
@@ -836,6 +879,12 @@ def run_project_report(cabinet_list: list, copper_price: float, db: list):
                     min_value=0.0, value=result['accessory_cost'],
                     step=100.0, format="%.0f", key=f"accessory_{result['name']}")
             cabinet_results.append(result)
+
+    if cabinet_results:
+        # 保存计算日志
+        save_calc_log(copper_price,
+                      [cab for cab in cabinet_list if cab['components']],
+                      cabinet_results)
 
     if not cabinet_results:
         st.warning("没有包含元器件的柜子")
