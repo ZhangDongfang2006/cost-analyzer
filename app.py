@@ -523,13 +523,26 @@ def main():
                         st.caption(f"💡 自动识别: {auto_current}A（可手动修改）")
 
                 with col_b:
+                    # 自动推断类型
+                    auto_type = ''
+                    if model_input:
+                        if '框架' in model_input or any(kw in model_input.upper() for kw in ['E1C', '3WL', 'MT', 'AN-']):
+                            auto_type = '框架断路器'
+                        elif any(kw in model_input.upper() for kw in ['TMD', 'TMA', '3VL', 'CB', 'CM1', 'NM1', 'NSX']):
+                            auto_type = '塑壳断路器'
+                        elif '互感器' in model_input or 'CT' in model_input.upper():
+                            auto_type = '电流互感器'
+                        elif 'MC7200' in model_input or '数显' in model_input or '仪表' in model_input:
+                            auto_type = '数显仪表'
+
                     use_custom_type = st.checkbox("自定义类型", key="custom_type_cb", value=False)
                     if use_custom_type:
                         custom_type = st.text_input("类型", key="custom_type_input", placeholder="输入自定义类型")
                         preset_type = ''
                     else:
-                        preset_type = st.selectbox("类型", ["塑壳断路器", "框架断路器", "电流互感器",
-                                                             "数显仪表", "其他"], key="type_input")
+                        type_options = ["塑壳断路器", "框架断路器", "电流互感器", "数显仪表", "其他"]
+                        default_idx = type_options.index(auto_type) if auto_type in type_options else 0
+                        preset_type = st.selectbox("类型", type_options, index=default_idx, key="type_input")
                         custom_type = ''
 
                 if st.button("✅ 添加到清单", type="primary", use_container_width=True):
@@ -923,7 +936,7 @@ def run_project_report(cabinet_list: list, copper_price: float, db: list):
                 st.warning(f"⚠️ 未在价格库中找到 {result['outgoing_circuits']}路出线辅助材料，请手动输入或更新价格库")
                 result['accessory_cost'] = st.number_input(
                     f"🔧 {result['name']} 辅助材料价格（元）",
-                    min_value=0, value=float(result['accessory_cost']),
+                    min_value=0.0, value=float(result['accessory_cost']),
                     step=100.0, format="%.0f", key=f"accessory_{result['name']}")
             cabinet_results.append(result)
 
