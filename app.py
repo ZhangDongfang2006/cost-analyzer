@@ -303,7 +303,8 @@ def calc_cable_cost(breaker_type: str, current: int, qty: int,
     if qty <= 0 or current <= 0:
         return 0.0
     if breaker_type == 'frame':
-        return 0.0  # 框架断路器用铜排，不计入电缆费用
+        spec = get_copper_spec_by_current(current)
+        return 2.5 * qty * spec['area_cm2'] * copper_price * 8.9 * 3
     else:
         cable_width = cable_params.get(current, 0)
         if cable_width == 0:
@@ -351,7 +352,6 @@ def calc_single_cabinet(cabinet: dict, copper_price: float, profit_rate: float =
     total_comp_cost = 0
     total_cable_cost = 0
     total_current = 0
-    frame_copper_cost = 0  # 框架断路器铜排费用
 
     for comp in components:
         rounded_price = round(comp['unit_price'], 0)
@@ -363,11 +363,6 @@ def calc_single_cabinet(cabinet: dict, copper_price: float, profit_rate: float =
                                cable_params, copper_price, width)
         total_cable_cost += cable
         total_current += comp['current'] * comp['qty']
-
-        # 框架断路器出线用铜排
-        if breaker_type == 'frame' and comp['qty'] > 0 and comp['current'] > 0:
-            spec = get_copper_spec_by_current(comp['current'])
-            frame_copper_cost += 2.5 * comp['qty'] * spec['area_cm2'] * copper_price * 8.9 * 3
 
     # 2. 铜排成本（根据柜内总电流独立计算）
     # 出线路数：优先使用数显仪表数量，如无仪表则使用断路器数量
@@ -391,9 +386,6 @@ def calc_single_cabinet(cabinet: dict, copper_price: float, profit_rate: float =
 
     reduced_current = total_current * derate
     copper_detail = calc_copper_busbar_cost(total_cable_cost, reduced_current, copper_price)
-    # 框架断路器铜排费用加到铜排成本中
-    copper_detail['total_cost'] = round(copper_detail['total_cost'] + frame_copper_cost, 0)
-    copper_detail['frame_copper_cost'] = round(frame_copper_cost, 2)
 
     # 3. 辅助材料：从价格库查找
     # 辅助材料：用模糊匹配查找（匹配包含"N路"或"N路出线"的辅助材料记录）
@@ -1343,50 +1335,19 @@ def run_project_report(cabinet_list: list, copper_price: float):
                 })
                 idx += 1
 
-            # 铜排和电缆明细行
+            # 铜排行
             cd = result['copper_detail']
-            spec = cd['copper_spec']
-            copper_spec_str = f"TMY-{spec['spec']}"
-            total_current = cd['total_current']
-
-            # 三相铜排
+            copper_spec_str = f"TMY-{cd['copper_spec']['spec']}"
             table_data.append({
-                '序号': idx, '名称': '铜排',
-                '型号': f"三相 {copper_spec_str}",
-                '数量': '7m', '单价(元)': '—',
-                '金额(元)': f"¥{cd['phase_cost']:,.0f}", '品牌': '江西/金来',
+                '序号': idx,
+                '名称': '铜排',
+                '型号': copper_spec_str,
+                '数量': '—',
+                '单价(元)': '—',
+                '金额(元)': f"¥{result['copper_cost']:,.0f}",
+                '品牌': '江西/金来',
             })
             idx += 1
-
-            # 零线
-            neutral_spec = f"TMY-{spec['width']//2}×{spec['thickness']}" if spec['width'] > 10 else f"TMY-{spec['spec']}半"
-            table_data.append({
-                '序号': idx, '名称': '铜排',
-                '型号': f"零线 {neutral_spec}",
-                '数量': '2m', '单价(元)': '—',
-                '金额(元)': f"¥{cd['neutral_cost']:,.0f}", '品牌': '江西/金来',
-            })
-            idx += 1
-
-            # 地线
-            ground_spec = f"TMY-{spec['width']//4}×{spec['thickness']}" if spec['width'] > 20 else f"TMY-{spec['spec']}1/4"
-            table_data.append({
-                '序号': idx, '名称': '铜排',
-                '型号': f"地线 {ground_spec}",
-                '数量': '2m', '单价(元)': '—',
-                '金额(元)': f"¥{cd['ground_cost']:,.0f}", '品牌': '江西/金来',
-            })
-            idx += 1
-
-            # 电缆合计行
-            if cd['cable_cost'] > 0:
-                table_data.append({
-                    '序号': idx, '名称': '电缆',
-                    '型号': f'电缆费用（降容后电流{total_current}A）',
-                    '数量': '—', '单价(元)': '—',
-                    '金额(元)': f"¥{cd['cable_cost']:,.0f}", '品牌': '',
-                })
-                idx += 1
 
             # 辅助材料行
             table_data.append({
@@ -1483,7 +1444,7 @@ def run_project_report(cabinet_list: list, copper_price: float):
                 '类型': r['type'],
                 '柜宽(m)': r['width'],
                 '元器件': f"¥{r['comp_cost']:,.0f}",
-                '铜排和电缆': f"¥{r['copper_cost']:,.0f}",
+                '铜排': f"¥{r['copper_cost']:,.0f}",
                 '辅助材料': f"¥{r['accessory_cost']:,.0f}",
                 '箱体': f"¥{r['cabinet_cost']:,.0f}",
                 '成本小计': f"¥{r['total_cost']:,.0f}",
@@ -1492,7 +1453,7 @@ def run_project_report(cabinet_list: list, copper_price: float):
             })
         summary_data.append({
             '柜号': '合计', '类型': '', '柜宽(m)': '',
-            '元器件': '', '铜排和电缆': '', '辅助材料': '', '箱体': '',
+            '元器件': '', '铜排': '', '辅助材料': '', '箱体': '',
             '成本小计': f"¥{project_total_cost:,.0f}",
             '成套费': f"¥{project_total_profit:,.0f}",
             '合计': f"¥{final_price:,.0f}",
