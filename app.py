@@ -876,7 +876,7 @@ def run_project_report(cabinet_list: list, copper_price: float, db: list):
                 st.warning(f"⚠️ 未在价格库中找到 {result['outgoing_circuits']}路出线辅助材料，请手动输入或更新价格库")
                 result['accessory_cost'] = st.number_input(
                     f"🔧 {result['name']} 辅助材料价格（元）",
-                    min_value=0.0, value=result['accessory_cost'],
+                    min_value=0, value=float(result['accessory_cost']),
                     step=100.0, format="%.0f", key=f"accessory_{result['name']}")
             cabinet_results.append(result)
 
