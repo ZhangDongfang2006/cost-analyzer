@@ -19,3 +19,5 @@ Thumbs.db
 *.tmp
 *.log
 *.swp
+data/price.db-shm
+data/price.db-wal
