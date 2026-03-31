@@ -140,7 +140,7 @@ def calc_cable_cost(breaker_type: str, current: int, qty: int,
         return 0.0
     if breaker_type == 'frame':
         spec = get_copper_spec_by_current(current)
-        return 2.5 * qty * spec['area_mm2'] * copper_price * 8.9 * 3
+        return 2.5 * qty * spec['area_cm2'] * copper_price * 8.9 * 3
     else:
         cable_width = cable_params.get(current, 0)
         if cable_width == 0:
@@ -311,7 +311,7 @@ def main():
                         st.text(f"¥{r.get('单价', 0):.0f}")
 
     # ─── 主区域 3个Tab ───
-    tab1, tab2, tab3 = st.tabs(["📋 项目配置", "⚡ 元器件管理", "📊 成本分析报告"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📋 项目配置", "⚡ 元器件管理", "📊 成本分析报告", "📖 计算公式说明"])
 
     # ==================== Tab1: 项目配置 ====================
     with tab1:
@@ -850,6 +850,81 @@ def generate_project_csv(cabinet_list, cabinet_results, total_cost, total_profit
     lines.append(f"含税报价(13%),{tax_price}")
 
     return "\n".join(lines)
+
+
+    # ==================== Tab4: 计算公式说明 ====================
+    with tab4:
+        st.header("📖 计算公式说明")
+        st.caption("配电设备成本计算系统所使用的全部公式和参数")
+
+        # 1. 铜排载流量对照表
+        with st.expander("📏 1. 铜排载流量对照表", expanded=False):
+            st.markdown("""
+            根据降容后总电流，从下表选取满足载流量要求的最小铜排规格。
+            """)
+            copper_table = pd.DataFrame(COPPER_SPECS)[['spec', 'area_mm2', 'area_cm2', 'current']]
+            copper_table.columns = ['规格', '截面积(mm²)', '截面积(cm²)', '载流量(A)']
+            st.dataframe(copper_table, use_container_width=True, hide_index=True)
+
+        # 2. 电缆费用公式
+        with st.expander("🔌 2. 电缆费用公式（J列）", expanded=False):
+            st.markdown("#### 塑壳断路器")
+            st.code("电缆费 = 电缆宽度(mm) × 数量 × ((柜宽/105 - 1)/2 + 1)", language="text")
+            st.markdown("""
+            > **说明：** 缓冲系数 `((柜宽/105 - 1)/2 + 1)` 用于平衡铜价波动，铜价上涨时报价只涨涨幅的一半。
+            """)
+            cable_params = load_breaker_cable_params()
+            cable_table = pd.DataFrame([
+                {'电流(A)': k, '电缆宽度(mm)': v} for k, v in sorted(cable_params.items()) if v > 0
+            ])
+            st.dataframe(cable_table, use_container_width=True, hide_index=True)
+
+            st.markdown("#### 框架断路器")
+            st.code("电缆费 = 2.5 × 数量 × 铜排截面积(cm²) × 铜价 × 8.9 × 3", language="text")
+
+        # 3. 铜排成本公式
+        with st.expander("🟫 3. 铜排成本公式（H51）", expanded=False):
+            st.code("""铜排总价 = ROUND(
+  7 × 铜排截面积(cm²) × 铜价 × 8.9        // 三相主母线（7米）
+  + 2 × (截面积/2) × 铜价 × 8.9            // 零线N（截面积为主母线一半）
+  + 2 × (截面积/4) × 铜价 × 8.9            // 地线PE（截面积为主母线四分之一）
+  + 总电缆费用, 0)""", language="text")
+            st.markdown("""
+            - **7** = 水平母线总长度（米），经验估算值
+            - **8.9** = 铜密度 (g/cm³)
+            - 铜排截面积根据降容后总电流从对照表选取
+            """)
+
+        # 4. 降容系数
+        with st.expander("📉 4. 降容系数", expanded=False):
+            st.code("降容后电流 = IF(出线路数>9, 总电流×0.7, IF(出线路数>5, 总电流×0.8, 总电流))", language="text")
+            st.markdown("- 出线路数 = 数显仪表数量")
+
+        # 5. 辅助材料费用
+        with st.expander("🔧 5. 辅助材料费用（固定值）", expanded=False):
+            st.code("辅助材料 = 63×2 + 100 + 250×2 + 400×3 = 1926元", language="text")
+
+        # 6. 箱体费用
+        with st.expander("📦 6. 箱体费用", expanded=False):
+            st.code("箱体 = 2200 + 400 × 断路器总数量", language="text")
+
+        # 7. 利润计算
+        with st.expander("💰 7. 利润计算（阶梯式）", expanded=False):
+            st.code("""IF(金额<10000, 金额×0.3,
+   IF(金额>50000, 金额×0.1,
+      (0.29 - 0.000003125×金额) × 金额))""", language="text")
+            profit_table = pd.DataFrame([
+                {'金额范围': '< ¥10,000', '利润率': '30%'},
+                {'金额范围': '¥10,000 ~ ¥50,000', '利润率': '29% ~ 10% 线性递减'},
+                {'金额范围': '> ¥50,000', '利润率': '10%'},
+            ])
+            st.dataframe(profit_table, use_container_width=True, hide_index=True)
+            st.markdown("> 每项（元器件、铜排、辅助材料、箱体）分别计算利润再求和。")
+
+        # 8. 最终报价
+        with st.expander("🏷️ 8. 最终报价", expanded=False):
+            st.code("""不含税报价 = 总成本 + 总利润
+含税报价 = 不含税报价 × 1.13""", language="text")
 
 
 if __name__ == "__main__":
