@@ -127,7 +127,9 @@ def get_all_brands():
         return [r['brand'] for r in rows]
 
 def lookup_price_sqlite(model):
+    """按型号查找价格，先精确匹配，再模糊匹配。"""
     with get_db() as conn:
+        # 1. 精确匹配
         row = conn.execute("SELECT * FROM products WHERE model = ?", (model,)).fetchone()
         if row:
             d = dict(row)
@@ -137,13 +139,36 @@ def lookup_price_sqlite(model):
                 'retail_price': float(d['retail_price'] or 0),
                 'brand': d['brand'],
             }
+        # 2. 模糊匹配：去掉空格后匹配
+        model_nospace = model.replace(' ', '').upper()
+        rows = conn.execute("SELECT * FROM products WHERE REPLACE(UPPER(model), ' ', '') LIKE ?", (f"%{model_nospace}%",)).fetchall()
+        if rows:
+            d = dict(rows[0])
+            return {
+                'name': d['name'],
+                'unit_price': float(d['unit_price'] or 0),
+                'retail_price': float(d['retail_price'] or 0),
+                'brand': d['brand'],
+            }
     return None
 
 def lookup_price_by_name_sqlite(name):
+    """按名称查找价格，先精确匹配，再模糊匹配。"""
     with get_db() as conn:
+        # 1. 精确匹配
         row = conn.execute("SELECT * FROM products WHERE name = ?", (name,)).fetchone()
         if row:
             d = dict(row)
+            return {
+                'name': d['name'],
+                'unit_price': float(d['unit_price'] or 0),
+                'retail_price': float(d['retail_price'] or 0),
+                'brand': d['brand'],
+            }
+        # 2. 模糊匹配
+        rows = conn.execute("SELECT * FROM products WHERE name LIKE ?", (f"%{name}%",)).fetchall()
+        if rows:
+            d = dict(rows[0])
             return {
                 'name': d['name'],
                 'unit_price': float(d['unit_price'] or 0),
@@ -374,8 +399,25 @@ def calc_single_cabinet(cabinet: dict, copper_price: float) -> dict:
     copper_detail = calc_copper_busbar_cost(total_cable_cost, reduced_current, copper_price)
 
     # 3. 辅助材料：从价格库查找
-    accessory_name = f"辅助材料（出线柜，{outgoing_circuits}路出线）"
-    accessory_match = lookup_price_by_name(accessory_name)
+    # 辅助材料：用模糊匹配查找（匹配包含"N路"或"N路出线"的辅助材料记录）
+    accessory_match = None
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM products WHERE name LIKE '%辅助材料%' AND name LIKE ?",
+            (f"%{outgoing_circuits}路%",)
+        ).fetchall()
+        if rows:
+            d = dict(rows[0])
+            accessory_match = {
+                'name': d['name'],
+                'unit_price': float(d['unit_price'] or 0),
+                'retail_price': float(d['retail_price'] or 0),
+                'brand': d['brand'],
+            }
+    if not accessory_match:
+        # 退而使用旧逻辑
+        accessory_name = f"辅助材料（出线柜，{outgoing_circuits}路出线）"
+        accessory_match = lookup_price_by_name(accessory_name)
     if accessory_match:
         accessory_cost = accessory_match['unit_price']
         accessory_matched = True
