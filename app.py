@@ -303,8 +303,7 @@ def calc_cable_cost(breaker_type: str, current: int, qty: int,
     if qty <= 0 or current <= 0:
         return 0.0
     if breaker_type == 'frame':
-        spec = get_copper_spec_by_current(current)
-        return 2.5 * qty * spec['area_cm2'] * copper_price * 8.9 * 3
+        return 0.0  # 框架断路器用铜排，不计入电缆费用
     else:
         cable_width = cable_params.get(current, 0)
         if cable_width == 0:
@@ -352,6 +351,7 @@ def calc_single_cabinet(cabinet: dict, copper_price: float, profit_rate: float =
     total_comp_cost = 0
     total_cable_cost = 0
     total_current = 0
+    frame_copper_cost = 0  # 框架断路器铜排费用
 
     for comp in components:
         rounded_price = round(comp['unit_price'], 0)
@@ -363,6 +363,11 @@ def calc_single_cabinet(cabinet: dict, copper_price: float, profit_rate: float =
                                cable_params, copper_price, width)
         total_cable_cost += cable
         total_current += comp['current'] * comp['qty']
+
+        # 框架断路器出线用铜排
+        if breaker_type == 'frame' and comp['qty'] > 0 and comp['current'] > 0:
+            spec = get_copper_spec_by_current(comp['current'])
+            frame_copper_cost += 2.5 * comp['qty'] * spec['area_cm2'] * copper_price * 8.9 * 3
 
     # 2. 铜排成本（根据柜内总电流独立计算）
     # 出线路数：优先使用数显仪表数量，如无仪表则使用断路器数量
@@ -386,6 +391,9 @@ def calc_single_cabinet(cabinet: dict, copper_price: float, profit_rate: float =
 
     reduced_current = total_current * derate
     copper_detail = calc_copper_busbar_cost(total_cable_cost, reduced_current, copper_price)
+    # 框架断路器铜排费用加到铜排成本中
+    copper_detail['total_cost'] = round(copper_detail['total_cost'] + frame_copper_cost, 0)
+    copper_detail['frame_copper_cost'] = round(frame_copper_cost, 2)
 
     # 3. 辅助材料：从价格库查找
     # 辅助材料：用模糊匹配查找（匹配包含"N路"或"N路出线"的辅助材料记录）
