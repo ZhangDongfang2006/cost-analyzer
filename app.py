@@ -911,26 +911,26 @@ def main():
                         '状态': status,
                     })
 
-                # 选择行删除
+                df_display = pd.DataFrame(display_data)
+                st.dataframe(df_display, use_container_width=True, hide_index=True)
+
+                # 类型未设置的警告
+                unset = [c for c in components if not c.get('type') or c['type'].startswith('（')]
+                if unset:
+                    st.error(f"⚠️ 有 {len(unset)} 个元器件类型未设置，将无法正确计算成本！请返回编辑。")
+
+                # 删除按钮（输入序号删除）
                 if components:
-                    df_del = pd.DataFrame(display_data)
-                    edited = st.data_editor(
-                        df_del, use_container_width=True, hide_index=True,
-                        key=f"comp_list_{idx}",
-                        selection_mode=["multi-row"],
-                    )
-                    selected = edited.selection.rows if hasattr(edited, 'selection') and edited.selection else []
-                    if selected:
-                        st.warning(f"已选中 {len(selected)} 行")
-                        c1, c2 = st.columns(2)
-                        with c1:
-                            if st.button(f"🗑️ 删除选中 ({len(selected)}行)", key=f"del_sel_{idx}"):
-                                for i in sorted(selected, reverse=True):
-                                    st.session_state.cabinet_list[idx]['components'].pop(i)
-                                st.rerun()
-                        with c2:
-                            if st.button("取消选择", key=f"del_cancel_{idx}"):
-                                st.rerun()
+                    del_num = st.number_input("删除第几行", min_value=1, max_value=len(components), value=1, step=1, key=f"del_row_{idx}", format="%d")
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button(f"🗑️ 删除第{del_num}行: {components[del_num-1]['model']}", key=f"del_btn_{idx}"):
+                            st.session_state.cabinet_list[idx]['components'].pop(del_num - 1)
+                            st.rerun()
+                    with c2:
+                        if st.button("🗑️ 清空清单", key=f"clear_{idx}"):
+                            st.session_state.cabinet_list[idx]['components'] = []
+                            st.rerun()
 
                 col_clear, col_calc = st.columns([1, 2])
                 with col_clear:
