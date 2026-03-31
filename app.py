@@ -368,15 +368,8 @@ def calc_single_cabinet(cabinet: dict, copper_price: float, profit_rate: float =
     # 出线路数：优先使用数显仪表数量，如无仪表则使用断路器数量
     meter_count = sum(c['qty'] for c in components if '仪表' in c.get('type', '') or '数显' in c.get('type', ''))
     breaker_count_for_circuits = sum(c['qty'] for c in components if '断路器' in c.get('type', ''))
-    has_meter = meter_count > 0
-    no_meter_warning = None
-    if has_meter:
-        outgoing_circuits = meter_count
-    elif breaker_count_for_circuits > 0:
-        outgoing_circuits = breaker_count_for_circuits
-        no_meter_warning = f"⚠️ 未配置数显仪表，出线路数按断路器数量({outgoing_circuits}路)计算。建议配置数显仪表以获得更准确的成本估算。"
-    else:
-        outgoing_circuits = 0
+    # 出线路数始终按断路器数量计算
+    outgoing_circuits = breaker_count_for_circuits
     # 降容系数：根据出线路数（Excel: IF(D50>9,I50*0.7,IF(D50>5,I50*0.8,I50))）
     if outgoing_circuits > 9:
         derate = 0.7
@@ -386,6 +379,7 @@ def calc_single_cabinet(cabinet: dict, copper_price: float, profit_rate: float =
         derate = 1.0
 
     # 数显仪表电缆费用：柜宽×4×铜价×8.9 + 柜宽×0.8×铜价×8.9
+    has_meter = meter_count > 0
     if has_meter:
         meter_cable_cost = width * 4 * copper_price * 8.9 + width * 0.8 * copper_price * 8.9
         total_cable_cost += meter_cable_cost
@@ -452,7 +446,7 @@ def calc_single_cabinet(cabinet: dict, copper_price: float, profit_rate: float =
         'outgoing_circuits': outgoing_circuits,
         'derate': derate,
         'accessory_matched': accessory_matched,
-        'no_meter_warning': no_meter_warning,
+        'no_meter_warning': None,
     }
 
 # ─── Session State 初始化 ─────────────────────────────────
