@@ -658,12 +658,13 @@ def main():
                     else:
                         type_options = ["塑壳断路器", "框架断路器", "电流互感器", "数显仪表", "其他"]
                         default_type = auto_type if auto_type in type_options else type_options[0]
-                        # 清除旧session_state确保动态更新
-                        if 'type_input' in st.session_state and st.session_state.type_input != default_type:
-                            del st.session_state.type_input
-                        preset_type = st.selectbox("类型", type_options, index=type_options.index(default_type), key="type_input")
+                        # 动态key确保型号变化时selectbox重新初始化
+                        type_key = f"type_input_{model_input or '_empty'}"
+                        preset_type = st.selectbox("类型", type_options, index=type_options.index(default_type), key=type_key)
                         if auto_type and auto_type not in type_options:
                             st.caption(f"💡 价格库类型: {auto_type}，请选择最接近的类型或自定义")
+                        elif auto_type and auto_type in type_options:
+                            st.caption(f"💡 已自动匹配类型: {auto_type}")
                         custom_type = ''
 
                 if st.button("✅ 添加到清单", type="primary", use_container_width=True):
@@ -1035,13 +1036,20 @@ def main():
             edit_df = pd.DataFrame(products)[['id', 'model', 'name', 'unit_price', 'retail_price', 'brand']]
             edit_df.columns = ['ID', '型号', '名称', '单价', '面价', '品牌']
 
+            # 分页控件
+            page_size = st.selectbox("每页显示", [50, 100, 200, 500, 9999], index=0,
+                                     key="mgmt_page_size", format_func=lambda x: "全部" if x >= len(products) else str(x))
+            page_size = min(page_size, len(products))
+
             edited = st.data_editor(
-                edit_df.head(50),
+                edit_df.head(page_size),
                 use_container_width=True,
                 hide_index=True,
                 disabled=['ID', '型号'],
                 key="price_editor",
             )
+            if page_size < len(products):
+                st.caption(f"显示前 {page_size} 条，共 {len(products)} 条")
 
             # 检测编辑并保存
             if st.button("💾 保存编辑", type="primary"):
