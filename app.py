@@ -580,9 +580,10 @@ def main():
             # 价格库浏览
             with st.expander("📚 价格库浏览", expanded=False):
                 price_search = st.text_input("搜索型号或名称", key="price_db_search", placeholder="输入关键词...")
-                price_df = price_db.get_all_prices()
+                price_df = pd.DataFrame(db)
+                price_df.columns = ['型号', '名称', '单价', '面价', '品牌', '附件', '折扣', '板前', '分励', '辅助']
                 if price_search:
-                    mask = price_df['型号'].str.contains(price_search, na=False) | price_df['名称'].str.contains(price_search, na=False)
+                    mask = price_df['型号'].str.contains(price_search, case=False, na=False) | price_df['名称'].str.contains(price_search, na=False)
                     price_df = price_df[mask]
                 st.dataframe(price_df[['型号', '名称', '单价', '品牌']].head(20), use_container_width=True, hide_index=True)
 
