@@ -11,6 +11,8 @@ import json
 import os
 import re
 import io
+import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime
 import openpyxl
@@ -51,16 +53,158 @@ def get_cached_copper_price():
     """缓存1小时的铜价"""
     return fetch_copper_price()
 
-# ─── 数据加载 ─────────────────────────────────────────────
-@st.cache_data(ttl=300)  # 5分钟自动刷新
-    """加载产品价格数据库"""
-    db_path = DATA_DIR / "price_db.json"
-    if db_path.exists():
-        with open(db_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    df = pd.read_excel(BASE_DIR / "成本.xlsx", sheet_name='库', usecols='A:F', nrows=2637)
-    df = df.dropna(subset=['型号', '名称']).reset_index(drop=True)
-    return df.to_dict(orient='records')
+# ─── SQLite 数据库 ────────────────────────────────────────
+DB_PATH = DATA_DIR / "price.db"
+
+@contextmanager
+def get_db():
+    conn = sqlite3.connect(str(DB_PATH), timeout=10)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+def init_db():
+    with get_db() as conn:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS products (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                model TEXT NOT NULL,
+                name TEXT DEFAULT '',
+                unit_price REAL DEFAULT 0,
+                retail_price REAL DEFAULT 0,
+                brand TEXT DEFAULT '',
+                created_at TEXT DEFAULT (datetime('now','localtime')),
+                updated_at TEXT DEFAULT (datetime('now','localtime'))
+            );
+            CREATE TABLE IF NOT EXISTS price_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                action TEXT NOT NULL,
+                model TEXT,
+                old_value TEXT,
+                new_value TEXT,
+                operator TEXT DEFAULT '',
+                created_at TEXT DEFAULT (datetime('now','localtime'))
+            );
+        """)
+
+def migrate_from_json():
+    json_path = DATA_DIR / "price_db.json"
+    if not json_path.exists():
+        return
+    with open(json_path, 'r', encoding='utf-8') as f:
+        items = json.load(f)
+    with get_db() as conn:
+        for item in items:
+            model = str(item.get('型号', '')).strip()
+            if not model:
+                continue
+            conn.execute(
+                "INSERT OR IGNORE INTO products (model, name, unit_price, retail_price, brand) VALUES (?,?,?,?,?)",
+                (model, str(item.get('名称', '')).strip(),
+                 float(item.get('单价', 0) or 0),
+                 float(item.get('面价', 0) or 0),
+                 str(item.get('产地/厂家', '')).strip()))
+        conn.commit()
+    import shutil
+    shutil.copy2(str(json_path), str(json_path) + ".bak")
+
+def get_all_products(search=''):
+    with get_db() as conn:
+        if search:
+            rows = conn.execute("SELECT * FROM products WHERE model LIKE ? OR name LIKE ? OR brand LIKE ?",
+                              (f'%{search}%', f'%{search}%', f'%{search}%')).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM products").fetchall()
+        return [dict(r) for r in rows]
+
+def get_all_brands():
+    with get_db() as conn:
+        rows = conn.execute("SELECT DISTINCT brand FROM products WHERE brand != '' ORDER BY brand").fetchall()
+        return [r['brand'] for r in rows]
+
+def lookup_price_sqlite(model):
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM products WHERE model = ?", (model,)).fetchone()
+        if row:
+            d = dict(row)
+            return {
+                'name': d['name'],
+                'unit_price': float(d['unit_price'] or 0),
+                'retail_price': float(d['retail_price'] or 0),
+                'brand': d['brand'],
+            }
+    return None
+
+def lookup_price_by_name_sqlite(name):
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM products WHERE name = ?", (name,)).fetchone()
+        if row:
+            d = dict(row)
+            return {
+                'name': d['name'],
+                'unit_price': float(d['unit_price'] or 0),
+                'retail_price': float(d['retail_price'] or 0),
+                'brand': d['brand'],
+            }
+    return None
+
+def insert_product(model, name, unit_price, retail_price, brand):
+    with get_db() as conn:
+        conn.execute("INSERT INTO products (model, name, unit_price, retail_price, brand) VALUES (?,?,?,?,?)",
+                    (model, name, unit_price, retail_price, brand))
+        conn.execute("INSERT INTO price_log (action, model, new_value) VALUES ('insert', ?, ?)",
+                    (model, json.dumps({'name':name,'unit_price':unit_price}, ensure_ascii=False)))
+        conn.commit()
+
+def update_product(pid, name, unit_price, retail_price, brand):
+    with get_db() as conn:
+        old = conn.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
+        old_json = json.dumps(dict(old), ensure_ascii=False) if old else ''
+        conn.execute("UPDATE products SET name=?, unit_price=?, retail_price=?, brand=?, updated_at=datetime('now','localtime') WHERE id=?",
+                    (name, unit_price, retail_price, brand, pid))
+        new = conn.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
+        new_json = json.dumps(dict(new), ensure_ascii=False) if new else ''
+        conn.execute("INSERT INTO price_log (action, model, old_value, new_value) VALUES ('update', ?, ?, ?)",
+                    (old['model'] if old else '', old_json, new_json))
+        conn.commit()
+
+def delete_product(pid):
+    with get_db() as conn:
+        old = conn.execute("SELECT * FROM products WHERE id=?", (pid,)).fetchone()
+        if old:
+            conn.execute("INSERT INTO price_log (action, model, old_value) VALUES ('delete', ?, ?)",
+                        (old['model'], json.dumps(dict(old), ensure_ascii=False)))
+            conn.execute("DELETE FROM products WHERE id=?", (pid,))
+            conn.commit()
+
+def bulk_import_products(items):
+    with get_db() as conn:
+        for item in items:
+            existing = conn.execute("SELECT id FROM products WHERE model=?", (item['model'],)).fetchone()
+            if existing:
+                conn.execute("UPDATE products SET name=?, unit_price=?, retail_price=?, brand=?, updated_at=datetime('now','localtime') WHERE id=?",
+                           (item.get('name',''), item.get('unit_price',0), item.get('retail_price',0), item.get('brand',''), existing['id']))
+            else:
+                conn.execute("INSERT INTO products (model, name, unit_price, retail_price, brand) VALUES (?,?,?,?,?)",
+                           (item['model'], item.get('name',''), item.get('unit_price',0), item.get('retail_price',0), item.get('brand','')))
+        conn.commit()
+
+def get_price_logs(limit=50):
+    with get_db() as conn:
+        rows = conn.execute("SELECT * FROM price_log ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+# ─── 启动时检查数据库 ─────────────────────────────────────
+if not DB_PATH.exists():
+    init_db()
+    migrate_from_json()
+else:
+    # 确保表存在
+    init_db()
 
 COPPER_SPECS = [
     {'spec': '40×5',  'width': 40, 'thickness': 5,  'area_mm2': 200, 'area_cm2': 0.20, 'current': 615},
@@ -81,31 +225,13 @@ def load_breaker_cable_params():
 
 # ─── 核心计算函数 ─────────────────────────────────────────
 
-def lookup_price_by_name(name: str, db: list) -> dict:
-    """根据名称查找价格"""
-    name = str(name).strip()
-    for item in db:
-        if str(item.get('名称', '')).strip() == name:
-            return {
-                'name': item.get('名称', ''),
-                'unit_price': float(item.get('单价', 0) or 0),
-                'retail_price': float(item.get('面价', 0) or 0),
-                'brand': item.get('产地/厂家', ''),
-            }
-    return None
+def lookup_price_by_name(name: str, db=None) -> dict:
+    """根据名称查找价格（兼容旧接口，db参数忽略）"""
+    return lookup_price_by_name_sqlite(str(name).strip())
 
-def lookup_price(model: str, db: list) -> dict:
-    """根据型号查找价格"""
-    model = str(model).strip()
-    for item in db:
-        if str(item.get('型号', '')).strip() == model:
-            return {
-                'name': item.get('名称', ''),
-                'unit_price': float(item.get('单价', 0) or 0),
-                'retail_price': float(item.get('面价', 0) or 0),
-                'brand': item.get('产地/厂家', ''),
-            }
-    return None
+def lookup_price(model: str, db=None) -> dict:
+    """根据型号查找价格（兼容旧接口，db参数忽略）"""
+    return lookup_price_sqlite(str(model).strip())
 
 def extract_current_from_model(model: str) -> int:
     """从型号中提取额定电流（支持多品牌断路器）"""
@@ -196,7 +322,7 @@ def calc_accessory_cost(outgoing_circuits: int) -> float:
     """辅助材料费用: 固定值 2266 = 63×2 + 100 + 250×2 + 400×3"""
     return 63 * 2 + 100 + 250 * 2 + 400 * 3  # 固定2266
 
-def calc_single_cabinet(cabinet: dict, copper_price: float, db: list) -> dict:
+def calc_single_cabinet(cabinet: dict, copper_price: float) -> dict:
     """计算单台柜子的所有费用"""
     components = cabinet['components']
     cable_params = load_breaker_cable_params()
@@ -249,7 +375,7 @@ def calc_single_cabinet(cabinet: dict, copper_price: float, db: list) -> dict:
 
     # 3. 辅助材料：从价格库查找
     accessory_name = f"辅助材料（出线柜，{outgoing_circuits}路出线）"
-    accessory_match = lookup_price_by_name(accessory_name, db)
+    accessory_match = lookup_price_by_name(accessory_name)
     if accessory_match:
         accessory_cost = accessory_match['unit_price']
         accessory_matched = True
@@ -311,7 +437,6 @@ def init_session_state():
 
 def main():
     init_session_state()
-    db = load_price_db()
 
     st.title("⚡ 配电设备成本计算系统")
     st.caption("多柜项目模式 · 自动计算铜排成本 · 智能匹配元器件价格 · 阶梯利润计算")
@@ -334,20 +459,18 @@ def main():
         st.subheader("📋 价格库搜索")
         search_term = st.text_input("搜索型号或名称", placeholder="如: XT1N160")
         if search_term:
-            results = [item for item in db
-                       if search_term.upper() in str(item.get('型号', '')).upper()
-                       or search_term in str(item.get('名称', ''))]
+            results = get_all_products(search_term)
             if results:
                 st.write(f"找到 {len(results)} 个结果（显示前15个）")
                 for r in results[:15]:
                     col1, col2 = st.columns([3, 1])
                     with col1:
-                        st.text(f"{r.get('型号', '')} | {r.get('名称', '')}")
+                        st.text(f"{r['model']} | {r['name']}")
                     with col2:
-                        st.text(f"¥{r.get('单价', 0):.0f}")
+                        st.text(f"¥{r['unit_price']:.0f}")
 
     # ─── 主区域 3个Tab ───
-    tab1, tab2, tab3, tab4 = st.tabs(["📋 项目配置", "⚡ 元器件管理", "📊 成本分析报告", "📖 计算公式说明"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 项目配置", "⚡ 元器件管理", "📊 成本分析报告", "📖 计算公式说明", "⚙️ 价格库管理"])
 
     # ==================== Tab1: 项目配置 ====================
     with tab1:
@@ -495,13 +618,12 @@ def main():
                                                 placeholder="输入元器件型号",
                                                 value=selected_model if selected_model else '')
                     if model_input:
-                        suggestions = [item for item in db
-                                       if model_input.upper() in str(item.get('型号', '')).upper()][:5]
+                        suggestions = get_all_products(model_input)[:5]
                         if suggestions:
                             for s in suggestions:
-                                if st.button(f"选择: {s.get('型号', '')}", key=f"sel_{s.get('型号', '')}"):
-                                    st.session_state._selected_model = s.get('型号', '')
-                                    st.session_state._selected_name = s.get('名称', '')
+                                if st.button(f"选择: {s['model']}", key=f"sel_{s['model']}"):
+                                    st.session_state._selected_model = s['model']
+                                    st.session_state._selected_name = s['name']
                                     st.rerun()
 
                 with col2:
@@ -525,7 +647,7 @@ def main():
                     # 从价格库匹配类型
                     auto_type = ''
                     if model_input:
-                        match = lookup_price(model_input, db)
+                        match = lookup_price(model_input)
                         if match and match['name']:
                             auto_type = match['name']
                     
@@ -546,7 +668,7 @@ def main():
 
                 if st.button("✅ 添加到清单", type="primary", use_container_width=True):
                     if model_input:
-                        match = lookup_price(model_input, db)
+                        match = lookup_price(model_input)
                         current = current_input if current_input > 0 else extract_current_from_model(model_input)
                         comp_type = custom_type if use_custom_type else preset_type
                         component = {
@@ -579,14 +701,13 @@ def main():
             # 价格库浏览
             with st.expander("📚 价格库浏览", expanded=False):
                 price_search = st.text_input("搜索型号或名称", key="price_db_search", placeholder="输入关键词...")
-                price_df = pd.DataFrame(db)
-                if price_search:
-                    name_col = '名称' if '名称' in price_df.columns else price_df.columns[1]
-                    model_col = '型号' if '型号' in price_df.columns else price_df.columns[0]
-                    mask = price_df[model_col].str.contains(price_search, case=False, na=False) | price_df[name_col].str.contains(price_search, na=False)
-                    price_df = price_df[mask]
-                display_cols = [c for c in ['型号', '名称', '单价', '产地/厂家', '面价'] if c in price_df.columns]
-                st.dataframe(price_df[display_cols].head(20), use_container_width=True, hide_index=True)
+                products = get_all_products(price_search)
+                price_df = pd.DataFrame(products)
+                if not price_df.empty:
+                    display_cols = [c for c in ['id', 'model', 'name', 'unit_price', 'retail_price', 'brand'] if c in price_df.columns]
+                    rename = {'model': '型号', 'name': '名称', 'unit_price': '单价', 'retail_price': '面价', 'brand': '品牌'}
+                    price_df = price_df[display_cols].rename(columns=rename)
+                    st.dataframe(price_df.head(20), use_container_width=True, hide_index=True)
 
             # 批量导入
             with st.expander("📦 批量导入", expanded=False):
@@ -635,7 +756,7 @@ def main():
                                             qty = int(float(qty))
                                         except (ValueError, TypeError):
                                             qty = 1
-                                        match = lookup_price(model, db)
+                                        match = lookup_price(model)
                                         preview_data.append({
                                             'name': name or (match['name'] if match else ''),
                                             'model': model,
@@ -683,7 +804,7 @@ def main():
                                             qty = int(float(qty))
                                         except (ValueError, TypeError):
                                             qty = 1
-                                        match = lookup_price(model, db)
+                                        match = lookup_price(model)
                                         preview_data.append({
                                             'name': name or (match['name'] if match else ''),
                                             'model': model,
@@ -713,7 +834,7 @@ def main():
                                 qty = int(float(qty_str))
                             except (ValueError, TypeError):
                                 continue
-                            match = lookup_price(model, db)
+                            match = lookup_price(model)
                             preview_data.append({
                                 'name': name or (match['name'] if match else ''),
                                 'model': model,
@@ -739,7 +860,7 @@ def main():
                     if st.button("✅ 确认导入", type="primary", use_container_width=True, key="batch_confirm"):
                         for item in preview_data:
                             current = extract_current_from_model(item['model'])
-                            match = lookup_price(item['model'], db)
+                            match = lookup_price(item['model'])
                             component = {
                                 'model': item['model'],
                                 'name': item['name'] or '未知',
@@ -806,7 +927,7 @@ def main():
         elif not any(cab['components'] for cab in st.session_state.cabinet_list):
             st.info("👈 请先在'元器件管理'中添加元器件并点击'计算成本分析报告'")
         elif st.session_state.get('show_calc'):
-            run_project_report(st.session_state.cabinet_list, copper_price, db)
+            run_project_report(st.session_state.cabinet_list, copper_price)
         else:
             st.info("👈 请在'元器件管理'中点击'计算成本分析报告'")
 
@@ -890,6 +1011,167 @@ def main():
             st.code("""不含税报价 = 总成本 + 总利润
 含税报价 = 不含税报价 × 1.13""", language="text")
 
+    # ==================== Tab5: 价格库管理 ====================
+    with tab5:
+        st.subheader("⚙️ 价格库管理")
+        total_count = len(get_all_products())
+        st.caption(f"共 {total_count} 个产品")
+
+        # 搜索和筛选
+        col_search, col_brand = st.columns([3, 1])
+        with col_search:
+            mgmt_search = st.text_input("搜索型号/名称", key="mgmt_search", placeholder="输入关键词...")
+        with col_brand:
+            brands = get_all_brands()
+            brand_filter = st.selectbox("品牌筛选", ["全部"] + brands, key="mgmt_brand")
+
+        # 构建查询
+        products = get_all_products(mgmt_search)
+        if brand_filter != "全部":
+            products = [p for p in products if p['brand'] == brand_filter]
+
+        if products:
+            # 可编辑表格
+            edit_df = pd.DataFrame(products)[['id', 'model', 'name', 'unit_price', 'retail_price', 'brand']]
+            edit_df.columns = ['ID', '型号', '名称', '单价', '面价', '品牌']
+
+            edited = st.data_editor(
+                edit_df.head(50),
+                use_container_width=True,
+                hide_index=True,
+                disabled=['ID', '型号'],
+                key="price_editor",
+            )
+
+            # 检测编辑并保存
+            if st.button("💾 保存编辑", type="primary"):
+                changes = 0
+                for _, row in edited.iterrows():
+                    pid = int(row['ID'])
+                    orig = next((p for p in products if p['id'] == pid), None)
+                    if orig and (orig['name'] != row['名称'] or orig['unit_price'] != row['单价']
+                                or orig['retail_price'] != row['面价'] or orig['brand'] != row['品牌']):
+                        update_product(pid, row['名称'], row['单价'], row['面价'], row['品牌'])
+                        changes += 1
+                if changes:
+                    st.success(f"✅ 已保存 {changes} 条修改")
+                    st.rerun()
+                else:
+                    st.info("没有修改")
+
+            # 删除
+            del_col1, del_col2 = st.columns([3, 1])
+            with del_col2:
+                del_model = st.text_input("删除型号", key="del_model_input", placeholder="输入要删除的型号")
+                if del_model:
+                    p = lookup_price_sqlite(del_model)
+                    if p:
+                        if st.button(f"🗑️ 删除 {del_model}", type="secondary"):
+                            # find id
+                            with get_db() as conn:
+                                row = conn.execute("SELECT id FROM products WHERE model=?", (del_model,)).fetchone()
+                                if row:
+                                    delete_product(row['id'])
+                            st.success(f"✅ 已删除 {del_model}")
+                            st.rerun()
+                    else:
+                        st.warning("型号不存在")
+        else:
+            st.info("没有找到匹配的产品")
+
+        st.divider()
+
+        # 新增产品
+        with st.expander("➕ 新增产品", expanded=False):
+            nc1, nc2, nc3 = st.columns([2, 2, 1])
+            with nc1:
+                new_model = st.text_input("型号", key="new_prod_model")
+            with nc2:
+                new_name = st.text_input("名称", key="new_prod_name")
+            with nc3:
+                new_brand = st.text_input("品牌", key="new_prod_brand")
+            nc4, nc5 = st.columns([1, 1])
+            with nc4:
+                new_unit = st.number_input("单价", min_value=0.0, key="new_prod_unit", step=1.0)
+            with nc5:
+                new_retail = st.number_input("面价", min_value=0.0, key="new_prod_retail", step=1.0)
+
+            if st.button("✅ 添加产品", key="add_product_btn"):
+                if new_model:
+                    existing = lookup_price_sqlite(new_model)
+                    if existing:
+                        st.warning(f"型号 {new_model} 已存在，请使用编辑功能修改")
+                    else:
+                        insert_product(new_model, new_name, new_unit, new_retail, new_brand)
+                        st.success(f"✅ 已添加 {new_model}")
+                        st.rerun()
+                else:
+                    st.warning("请填写型号")
+
+        # 批量导入
+        with st.expander("📦 批量导入（Excel/CSV）", expanded=False):
+            import_file = st.file_uploader("上传文件", type=["xlsx", "xls", "csv"], key="price_import_file")
+            if import_file:
+                try:
+                    import_df = pd.read_excel(import_file) if not import_file.name.endswith('.csv') else pd.read_csv(import_file, encoding='utf-8-sig')
+                    # 尝试映射列
+                    col_map = {}
+                    for c in import_df.columns:
+                        cl = str(c).strip()
+                        if '型号' in cl: col_map['model'] = c
+                        elif '名称' in cl: col_map['name'] = c
+                        elif '单价' in cl: col_map['unit_price'] = c
+                        elif '面价' in cl: col_map['retail_price'] = c
+                        elif '品牌' in cl or '产地' in cl: col_map['brand'] = c
+
+                    if 'model' not in col_map:
+                        # fallback: use first 3 columns
+                        cols = list(import_df.columns)
+                        col_map = {'model': cols[0], 'name': cols[1] if len(cols)>1 else '', 
+                                  'unit_price': cols[2] if len(cols)>2 else ''}
+
+                    preview_items = []
+                    for _, row in import_df.iterrows():
+                        model = str(row.get(col_map.get('model',''), '')).strip()
+                        if not model:
+                            continue
+                        preview_items.append({
+                            'model': model,
+                            'name': str(row.get(col_map.get('name',''), '')).strip(),
+                            'unit_price': float(row.get(col_map.get('unit_price',0), 0) or 0),
+                            'retail_price': float(row.get(col_map.get('retail_price',0), 0) or 0),
+                            'brand': str(row.get(col_map.get('brand',''), '')).strip(),
+                        })
+
+                    if preview_items:
+                        st.write(f"预览 {len(preview_items)} 个产品（前20个）：")
+                        st.dataframe(pd.DataFrame(preview_items[:20]), use_container_width=True, hide_index=True)
+                        if st.button("✅ 确认导入", type="primary", key="confirm_import"):
+                            bulk_import_products(preview_items)
+                            st.success(f"✅ 已导入 {len(preview_items)} 个产品")
+                            st.rerun()
+                    else:
+                        st.warning("未识别到有效数据")
+                except Exception as e:
+                    st.error(f"读取文件失败: {e}")
+
+        # 操作日志
+        with st.expander("📜 操作日志", expanded=False):
+            logs = get_price_logs(50)
+            if logs:
+                log_data = []
+                for log in logs:
+                    log_data.append({
+                        '时间': log['created_at'],
+                        '操作': log['action'],
+                        '型号': log['model'],
+                        '变更内容': log.get('new_value', '')[:80] if log['action'] == 'insert' 
+                                   else f"{log.get('old_value','')[:40]}→{log.get('new_value','')[:40]}",
+                    })
+                st.dataframe(pd.DataFrame(log_data), use_container_width=True, hide_index=True)
+            else:
+                st.info("暂无操作日志")
+
 # ─── 计算日志 ───────────────────────────────────────────────
 LOG_FILE = Path(__file__).parent / "data" / "calc_logs.jsonl"
 MAX_LOGS = 1500
@@ -932,7 +1214,7 @@ def save_calc_log(copper_price, cabinets, results):
             f.write(json.dumps(log, ensure_ascii=False) + '\n')
 
 
-def run_project_report(cabinet_list: list, copper_price: float, db: list):
+def run_project_report(cabinet_list: list, copper_price: float):
     """生成项目成本分析报告"""
     project_name = st.session_state.project_name or "未命名项目"
     st.header(f"📊 成本分析报告 - {project_name}")
@@ -941,7 +1223,7 @@ def run_project_report(cabinet_list: list, copper_price: float, db: list):
     cabinet_results = []
     for cab in cabinet_list:
         if cab['components']:
-            result = calc_single_cabinet(cab, copper_price, db)
+            result = calc_single_cabinet(cab, copper_price)
             # 检查辅材是否匹配成功
             if not result.get('accessory_matched', False):
                 st.warning(f"⚠️ 未在价格库中找到 {result['outgoing_circuits']}路出线辅助材料，请手动输入或更新价格库")
