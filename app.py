@@ -523,26 +523,27 @@ def main():
                         st.caption(f"💡 自动识别: {auto_current}A（可手动修改）")
 
                 with col_b:
-                    # 自动推断类型
+                    # 从价格库匹配类型
                     auto_type = ''
                     if model_input:
-                        if '框架' in model_input or any(kw in model_input.upper() for kw in ['E1C', '3WL', 'MT', 'AN-']):
-                            auto_type = '框架断路器'
-                        elif any(kw in model_input.upper() for kw in ['TMD', 'TMA', '3VL', 'CB', 'CM1', 'NM1', 'NSX']):
-                            auto_type = '塑壳断路器'
-                        elif '互感器' in model_input or 'CT' in model_input.upper():
-                            auto_type = '电流互感器'
-                        elif 'MC7200' in model_input or '数显' in model_input or '仪表' in model_input:
-                            auto_type = '数显仪表'
-
+                        match = lookup_price(model_input, db)
+                        if match and match['name']:
+                            auto_type = match['name']
+                    
                     use_custom_type = st.checkbox("自定义类型", key="custom_type_cb", value=False)
                     if use_custom_type:
                         custom_type = st.text_input("类型", key="custom_type_input", placeholder="输入自定义类型")
                         preset_type = ''
                     else:
                         type_options = ["塑壳断路器", "框架断路器", "电流互感器", "数显仪表", "其他"]
-                        default_idx = type_options.index(auto_type) if auto_type in type_options else 0
-                        preset_type = st.selectbox("类型", type_options, index=default_idx, key="type_input")
+                        # 用 value 而非 index 来动态设置默认值
+                        current_type = st.session_state.get('type_input', auto_type if auto_type in type_options else type_options[0])
+                        # 如果有新的自动推断且和当前不同，更新
+                        if auto_type and auto_type in type_options and current_type != auto_type:
+                            st.session_state.type_input = auto_type
+                        preset_type = st.selectbox("类型", type_options, key="type_input")
+                        if auto_type and auto_type not in type_options:
+                            st.caption(f"💡 价格库类型: {auto_type}，请选择最接近的类型或自定义")
                         custom_type = ''
 
                 if st.button("✅ 添加到清单", type="primary", use_container_width=True):
