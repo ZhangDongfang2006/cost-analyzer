@@ -155,22 +155,22 @@ def lookup_price_sqlite(model):
 def lookup_price_by_name_sqlite(name):
     """按名称查找价格，先精确匹配，再模糊匹配。"""
     with get_db() as conn:
-        # 1. 精确匹配
-        row = conn.execute("SELECT * FROM products WHERE name = ?", (name,)).fetchone()
+        # 1. 精确匹配（名称或型号）
+        row = conn.execute("SELECT * FROM products WHERE name = ? OR model = ?", (name, name)).fetchone()
         if row:
             d = dict(row)
             return {
-                'name': d['name'],
+                'name': d['name'] or d['model'],
                 'unit_price': float(d['unit_price'] or 0),
                 'retail_price': float(d['retail_price'] or 0),
                 'brand': d['brand'],
             }
-        # 2. 模糊匹配
-        rows = conn.execute("SELECT * FROM products WHERE name LIKE ?", (f"%{name}%",)).fetchall()
+        # 2. 模糊匹配（名称或型号）
+        rows = conn.execute("SELECT * FROM products WHERE name LIKE ? OR model LIKE ?", (f"%{name}%", f"%{name}%")).fetchall()
         if rows:
             d = dict(rows[0])
             return {
-                'name': d['name'],
+                'name': d['name'] or d['model'],
                 'unit_price': float(d['unit_price'] or 0),
                 'retail_price': float(d['retail_price'] or 0),
                 'brand': d['brand'],
@@ -403,8 +403,8 @@ def calc_single_cabinet(cabinet: dict, copper_price: float) -> dict:
     accessory_match = None
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM products WHERE name LIKE '%辅助材料%' AND name LIKE ?",
-            (f"%{outgoing_circuits}路%",)
+            "SELECT * FROM products WHERE (model LIKE '%辅助材料%' OR name LIKE '%辅助材料%') AND (model LIKE ? OR name LIKE ?)",
+            (f"%{outgoing_circuits}路%", f"%{outgoing_circuits}路%")
         ).fetchall()
         if rows:
             d = dict(rows[0])
