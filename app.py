@@ -571,57 +571,104 @@ def main():
                 preview_data = []
 
                 if import_mode == "📄 Excel文件":
-                    uploaded = st.file_uploader("上传Excel文件", type=["xlsx", "xls"], key="batch_excel")
+                    uploaded = st.file_uploader("上传文件", type=["xlsx", "xls", "csv"], key="batch_excel")
                     if uploaded:
                         try:
-                            wb = openpyxl.load_workbook(uploaded, read_only=True, data_only=True)
-                            ws = wb.active
-                            rows = list(ws.iter_rows(max_row=16, values_only=False))
-                            wb.close()
+                            if uploaded.name.endswith('.csv'):
+                                # CSV文件处理
+                                import csv
+                                import io
+                                content = uploaded.read().decode('utf-8-sig')
+                                reader = csv.reader(io.StringIO(content))
+                                all_rows = list(reader)
+                                header_text = all_rows[0] if all_rows else []
 
-                            # 识别列：找含"型号"的列头作为型号列(C)，含"数量"的列头作为数量列(D)，含"名称"的列头作为名称列(B)
-                            header = rows[0] if rows else []
-                            header_text = [str(c.value or '') for c in header]
+                                col_model = None
+                                col_qty = None
+                                col_name = None
+                                has_header = False
 
-                            col_model = None
-                            col_qty = None
-                            col_name = None
-                            has_header = False
+                                for ci, h in enumerate(header_text):
+                                    if '型号' in str(h):
+                                        col_model = ci; has_header = True
+                                    if '数量' in str(h):
+                                        col_qty = ci; has_header = True
+                                    if '名称' in str(h):
+                                        col_name = ci; has_header = True
 
-                            for ci, h in enumerate(header_text):
-                                if '型号' in h:
-                                    col_model = ci; has_header = True
-                                if '数量' in h:
-                                    col_qty = ci; has_header = True
-                                if '名称' in h:
-                                    col_name = ci; has_header = True
+                                if not has_header:
+                                    col_name = 1; col_model = 2; col_qty = 3
+                                    data_rows = all_rows[:15]
+                                else:
+                                    data_rows = all_rows[1:16]
 
-                            if not has_header:
-                                col_name = 1; col_model = 2; col_qty = 3  # B=1, C=2, D=3
-                                data_rows = rows[:15]
+                                for row in data_rows:
+                                    model = str(row[col_model] or '').strip() if col_model is not None and col_model < len(row) else ''
+                                    qty = row[col_qty] if col_qty is not None and col_qty < len(row) else 0
+                                    name = str(row[col_name] or '').strip() if col_name is not None and col_name < len(row) else ''
+                                    if model:
+                                        try:
+                                            qty = int(float(qty))
+                                        except (ValueError, TypeError):
+                                            qty = 1
+                                        match = lookup_price(model, db)
+                                        preview_data.append({
+                                            'name': name or (match['name'] if match else ''),
+                                            'model': model,
+                                            'qty': qty,
+                                            'unit_price': match['unit_price'] if match else 0,
+                                            'matched': match is not None,
+                                        })
                             else:
-                                data_rows = rows[1:16]
+                                # Excel文件处理
+                                wb = openpyxl.load_workbook(uploaded, read_only=True, data_only=True)
+                                ws = wb.active
+                                rows = list(ws.iter_rows(max_row=16, values_only=False))
+                                wb.close()
 
-                            for row in data_rows:
-                                vals = [c.value for c in row]
-                                model = str(vals[col_model] or '').strip() if col_model is not None and col_model < len(vals) else ''
-                                qty = vals[col_qty] if col_qty is not None and col_qty < len(vals) else 0
-                                name = str(vals[col_name] or '').strip() if col_name is not None and col_name < len(vals) else ''
-                                if model:
-                                    try:
-                                        qty = int(float(qty))
-                                    except (ValueError, TypeError):
-                                        qty = 1
-                                    match = lookup_price(model, db)
-                                    preview_data.append({
-                                        'name': name or (match['name'] if match else ''),
-                                        'model': model,
-                                        'qty': qty,
-                                        'unit_price': match['unit_price'] if match else 0,
-                                        'matched': match is not None,
-                                    })
+                                # 识别列：找含"型号"的列头作为型号列(C)，含"数量"的列头作为数量列(D)，含"名称"的列头作为名称列(B)
+                                header = rows[0] if rows else []
+                                header_text = [str(c.value or '') for c in header]
+
+                                col_model = None
+                                col_qty = None
+                                col_name = None
+                                has_header = False
+
+                                for ci, h in enumerate(header_text):
+                                    if '型号' in h:
+                                        col_model = ci; has_header = True
+                                    if '数量' in h:
+                                        col_qty = ci; has_header = True
+                                    if '名称' in h:
+                                        col_name = ci; has_header = True
+
+                                if not has_header:
+                                    col_name = 1; col_model = 2; col_qty = 3  # B=1, C=2, D=3
+                                    data_rows = rows[:15]
+                                else:
+                                    data_rows = rows[1:16]
+
+                                for row in data_rows:
+                                    vals = [c.value for c in row]
+                                    model = str(vals[col_model] or '').strip() if col_model is not None and col_model < len(vals) else ''
+                                    qty = vals[col_qty] if col_qty is not None and col_qty < len(vals) else 0
+                                    name = str(vals[col_name] or '').strip() if col_name is not None and col_name < len(vals) else ''
+                                    if model:
+                                        try:
+                                            qty = int(float(qty))
+                                        except (ValueError, TypeError):
+                                            qty = 1
+                                        match = lookup_price(model, db)
+                                        preview_data.append({
+                                            'name': name or (match['name'] if match else ''),
+                                            'model': model,
+                                            'qty': qty,
+                                            'unit_price': match['unit_price'] if match else 0,
+                                            'matched': match is not None,
+                                        })
                         except Exception as e:
-                            st.error(f"读取Excel失败: {e}")
+                            st.error(f"读取文件失败: {e}")
 
                 else:  # 文本粘贴
                     text = st.text_area("每行一个元器件（Tab/空格分隔）", height=150,
