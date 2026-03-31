@@ -219,9 +219,19 @@ def calc_single_cabinet(cabinet: dict, copper_price: float, db: list) -> dict:
         total_current += comp['current'] * comp['qty']
 
     # 2. 铜排成本（根据柜内总电流独立计算）
-    # 出线路数 = 断路器总数量（塑壳+框架），即出线回路数
-    outgoing_circuits = sum(c['qty'] for c in components if '断路器' in c.get('type', ''))
-    # 降容系数：根据断路器数量（出线回路数）（Excel: IF(D50>9,I50*0.7,IF(D50>5,I50*0.8,I50))）
+    # 出线路数：优先使用数显仪表数量，如无仪表则使用断路器数量
+    meter_count = sum(c['qty'] for c in components if '仪表' in c.get('type', '') or '数显' in c.get('type', ''))
+    breaker_count_for_circuits = sum(c['qty'] for c in components if '断路器' in c.get('type', ''))
+    has_meter = meter_count > 0
+    no_meter_warning = None
+    if has_meter:
+        outgoing_circuits = meter_count
+    elif breaker_count_for_circuits > 0:
+        outgoing_circuits = breaker_count_for_circuits
+        no_meter_warning = f"⚠️ 未配置数显仪表，出线路数按断路器数量({outgoing_circuits}路)计算。建议配置数显仪表以获得更准确的成本估算。"
+    else:
+        outgoing_circuits = 0
+    # 降容系数：根据出线路数（Excel: IF(D50>9,I50*0.7,IF(D50>5,I50*0.8,I50))）
     if outgoing_circuits > 9:
         derate = 0.7
     elif outgoing_circuits > 5:
@@ -230,7 +240,6 @@ def calc_single_cabinet(cabinet: dict, copper_price: float, db: list) -> dict:
         derate = 1.0
 
     # 数显仪表电缆费用：柜宽×4×铜价×8.9 + 柜宽×0.8×铜价×8.9
-    has_meter = any('仪表' in c.get('type', '') or '数显' in c.get('type', '') for c in components)
     if has_meter:
         meter_cable_cost = width * 4 * copper_price * 8.9 + width * 0.8 * copper_price * 8.9
         total_cable_cost += meter_cable_cost
@@ -284,6 +293,7 @@ def calc_single_cabinet(cabinet: dict, copper_price: float, db: list) -> dict:
         'outgoing_circuits': outgoing_circuits,
         'derate': derate,
         'accessory_matched': accessory_matched,
+        'no_meter_warning': no_meter_warning,
     }
 
 # ─── Session State 初始化 ─────────────────────────────────
@@ -777,8 +787,9 @@ def main():
 
         # 4. 降容系数
         with st.expander("📉 4. 降容系数", expanded=False):
-            st.code("降容后电流 = IF(断路器数量(出线回路数)>9, 总电流×0.7, IF(断路器数量>5, 总电流×0.8, 总电流))", language="text")
-            st.markdown("- 断路器数量（出线回路数）= 塑壳断路器 + 框架断路器 总数量")
+            st.code("降容后电流 = IF(出线路数>9, 总电流×0.7, IF(出线路数>5, 总电流×0.8, 总电流))", language="text")
+            st.markdown("- 出线路数优先使用**数显仪表**数量")
+            st.markdown("- 如无数显仪表，则使用**断路器**数量（塑壳+框架总数量）作为出线路数")
 
         # 5. 辅助材料费用
         with st.expander("🔧 5. 辅助材料费用", expanded=False):
@@ -847,6 +858,9 @@ def run_project_report(cabinet_list: list, copper_price: float, db: list):
             c4.metric(result['accessory_label'], f"¥{result['accessory_cost']:,.0f}")
             c5.metric("箱体费用", f"¥{result['cabinet_cost']:,.0f}")
             c6.metric("小计", f"¥{result['subtotal']:,.0f}")
+
+            if result.get('no_meter_warning'):
+                st.warning(result['no_meter_warning'], icon="⚠️")
 
             # 铜排信息
             with st.expander("📐 铜排详情"):
