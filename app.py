@@ -1343,8 +1343,8 @@ def run_project_report(cabinet_list: list, copper_price: float):
 
             # 三相铜排
             table_data.append({
-                '序号': idx, '名称': '铜排和电缆',
-                '型号': f"三相铜排 {copper_spec_str}",
+                '序号': idx, '名称': '铜排',
+                '型号': f"三相 {copper_spec_str}",
                 '数量': '7m', '单价(元)': '—',
                 '金额(元)': f"¥{cd['phase_cost']:,.0f}", '品牌': '江西/金来',
             })
@@ -1353,7 +1353,7 @@ def run_project_report(cabinet_list: list, copper_price: float):
             # 零线
             neutral_spec = f"TMY-{spec['width']//2}×{spec['thickness']}" if spec['width'] > 10 else f"TMY-{spec['spec']}半"
             table_data.append({
-                '序号': idx, '名称': '铜排和电缆',
+                '序号': idx, '名称': '铜排',
                 '型号': f"零线 {neutral_spec}",
                 '数量': '2m', '单价(元)': '—',
                 '金额(元)': f"¥{cd['neutral_cost']:,.0f}", '品牌': '江西/金来',
@@ -1363,7 +1363,7 @@ def run_project_report(cabinet_list: list, copper_price: float):
             # 地线
             ground_spec = f"TMY-{spec['width']//4}×{spec['thickness']}" if spec['width'] > 20 else f"TMY-{spec['spec']}1/4"
             table_data.append({
-                '序号': idx, '名称': '铜排和电缆',
+                '序号': idx, '名称': '铜排',
                 '型号': f"地线 {ground_spec}",
                 '数量': '2m', '单价(元)': '—',
                 '金额(元)': f"¥{cd['ground_cost']:,.0f}", '品牌': '江西/金来',
@@ -1373,7 +1373,7 @@ def run_project_report(cabinet_list: list, copper_price: float):
             # 电缆合计行
             if cd['cable_cost'] > 0:
                 table_data.append({
-                    '序号': idx, '名称': '铜排和电缆',
+                    '序号': idx, '名称': '电缆',
                     '型号': f'电缆费用（降容后电流{total_current}A）',
                     '数量': '—', '单价(元)': '—',
                     '金额(元)': f"¥{cd['cable_cost']:,.0f}", '品牌': '',
