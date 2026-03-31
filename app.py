@@ -333,21 +333,16 @@ def calc_copper_busbar_cost(total_cable_cost: float, total_current: float,
         'total_current': round(total_current, 1),
     }
 
-def calc_profit(amount: float) -> float:
+def calc_profit(amount: float, rate: float = 0.16) -> float:
     if amount <= 0:
         return 0.0
-    if amount < 10000:
-        return amount * 0.3
-    elif amount > 49999.99:
-        return amount * 0.1
-    else:
-        return (0.29 - 0.000003125 * amount) * amount
+    return amount * rate
 
 def calc_accessory_cost(outgoing_circuits: int) -> float:
     """辅助材料费用: 固定值 2266 = 63×2 + 100 + 250×2 + 400×3"""
     return 63 * 2 + 100 + 250 * 2 + 400 * 3  # 固定2266
 
-def calc_single_cabinet(cabinet: dict, copper_price: float) -> dict:
+def calc_single_cabinet(cabinet: dict, copper_price: float, profit_rate: float = 0.16) -> dict:
     """计算单台柜子的所有费用"""
     components = cabinet['components']
     cable_params = load_breaker_cable_params()
@@ -432,12 +427,10 @@ def calc_single_cabinet(cabinet: dict, copper_price: float) -> dict:
     # 5. 小计（不含利润）
     subtotal = total_comp_cost + copper_detail['total_cost'] + accessory_cost + cabinet_cost
 
-    # 6. 利润（各项分别算）
-    comp_profit = calc_profit(total_comp_cost)
-    copper_profit = calc_profit(copper_detail['total_cost'])
-    accessory_profit = calc_profit(accessory_cost)
-    cabinet_profit = calc_profit(cabinet_cost)
-    total_profit = comp_profit + copper_profit + accessory_profit + cabinet_profit
+    # 6. 成套费（统一利润率）
+    total_cost = subtotal  # 不含利润
+    total_profit = calc_profit(total_cost, profit_rate)
+    grand_total = total_cost + total_profit
 
     return {
         'name': cabinet['name'],
@@ -450,12 +443,10 @@ def calc_single_cabinet(cabinet: dict, copper_price: float) -> dict:
         'accessory_cost': accessory_cost,
         'accessory_label': f"辅助材料（{cabinet['name']}，{outgoing_circuits}路出线）",
         'cabinet_cost': cabinet_cost,
-        'subtotal': subtotal,
-        'comp_profit': comp_profit,
-        'copper_profit': copper_profit,
-        'accessory_profit': accessory_profit,
-        'cabinet_profit': cabinet_profit,
+        'total_cost': total_cost,
         'total_profit': total_profit,
+        'grand_total': grand_total,
+        'profit_rate': profit_rate,
         'total_current': total_current,
         'reduced_current': reduced_current,
         'outgoing_circuits': outgoing_circuits,
@@ -481,7 +472,7 @@ def main():
     init_session_state()
 
     st.title("⚡ 配电设备成本计算系统")
-    st.caption("多柜项目模式 · 自动计算铜排成本 · 智能匹配元器件价格 · 阶梯利润计算")
+    st.caption("多柜项目模式 · 自动计算铜排成本 · 智能匹配元器件价格 · 统一利润率计算")
 
     # ─── 侧边栏 ───
     with st.sidebar:
@@ -1059,17 +1050,10 @@ def main():
             st.code("箱体 = 2200 + 400 × 断路器总数量", language="text")
 
         # 7. 利润计算
-        with st.expander("💰 7. 利润计算（阶梯式）", expanded=False):
-            st.code("""IF(金额<10000, 金额×0.3,
-   IF(金额>50000, 金额×0.1,
-      (0.29 - 0.000003125×金额) × 金额))""", language="text")
-            profit_table = pd.DataFrame([
-                {'金额范围': '< ¥10,000', '利润率': '30%'},
-                {'金额范围': '¥10,000 ~ ¥50,000', '利润率': '29% ~ 10% 线性递减'},
-                {'金额范围': '> ¥50,000', '利润率': '10%'},
-            ])
-            st.dataframe(profit_table, use_container_width=True, hide_index=True)
-            st.markdown("> 每项（元器件、铜排、辅助材料、箱体）分别计算利润再求和。")
+        with st.expander("💰 7. 利润计算（统一利润率）", expanded=False):
+            st.code("成套费 = (元器件 + 铜排 + 辅助材料 + 箱体) × 利润率", language="text")
+            st.markdown("- 默认利润率: **16%**，可在成本分析报告中调整")
+            st.markdown("- 成套费 = 组装费 + 企业管理费 + 税收 + 利润等")
 
         # 8. 最终报价
         with st.expander("🏷️ 8. 最终报价", expanded=False):
@@ -1251,9 +1235,11 @@ MAX_LOGS = 1500
 def save_calc_log(copper_price, cabinets, results):
     """保存计算日志到JSONL文件，最多保留1500条"""
     LOG_FILE.parent.mkdir(exist_ok=True)
+    profit_rate = results[0].get('profit_rate', 0.16) if results else 0.16
     entry = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "copper_price": copper_price,
+        "profit_rate": profit_rate,
         "cabinets": []
     }
     for cab, result in zip(cabinets, results):
@@ -1291,11 +1277,16 @@ def run_project_report(cabinet_list: list, copper_price: float):
     project_name = st.session_state.project_name or "未命名项目"
     st.header(f"📊 成本分析报告 - {project_name}")
 
+    # 利润率输入
+    col_pr, col_empty = st.columns([1, 5])
+    with col_pr:
+        profit_rate = st.number_input("利润率(%)", min_value=0, max_value=100, value=16, step=1, format="%d") / 100
+
     # 计算每台柜子
     cabinet_results = []
     for cab in cabinet_list:
         if cab['components']:
-            result = calc_single_cabinet(cab, copper_price)
+            result = calc_single_cabinet(cab, copper_price, profit_rate)
             # 检查辅材是否匹配成功
             if not result.get('accessory_matched', False):
                 st.warning(f"⚠️ 未在价格库中找到 {result['outgoing_circuits']}路出线辅助材料，请手动输入或更新价格库")
@@ -1303,6 +1294,10 @@ def run_project_report(cabinet_list: list, copper_price: float):
                     f"🔧 {result['name']} 辅助材料价格（元）",
                     min_value=0.0, value=float(result['accessory_cost']),
                     step=100.0, format="%.0f", key=f"accessory_{result['name']}")
+                # 重新计算
+                result['total_cost'] = result['comp_cost'] + result['copper_cost'] + result['accessory_cost'] + result['cabinet_cost']
+                result['total_profit'] = calc_profit(result['total_cost'], profit_rate)
+                result['grand_total'] = result['total_cost'] + result['total_profit']
             cabinet_results.append(result)
 
     if cabinet_results:
@@ -1315,36 +1310,109 @@ def run_project_report(cabinet_list: list, copper_price: float):
         st.warning("没有包含元器件的柜子")
         return
 
-    # ─── 每台柜子明细 ───
+    # ─── 每台柜子明细（匹配Excel格式） ───
     st.subheader("🗄️ 各柜明细")
 
     project_total_cost = 0
     project_total_profit = 0
 
     for result in cabinet_results:
+        # 找到对应的cabinet
+        cab = next(c for c in cabinet_list if c['name'] == result['name'])
+        components = cab['components']
+
         with st.expander(f"{'🔴 ' if result == cabinet_results[0] else ''}{result['name']} ({result['type']}, {result['width']}m)", expanded=(result == cabinet_results[0])):
-            c1, c2, c3 = st.columns(3)
-            c1.metric("元器件费用", f"¥{result['comp_cost']:,.0f}")
-            c2.metric("电缆费用", f"¥{result['cable_cost']:,.0f}")
-            c3.metric("铜排成本", f"¥{result['copper_cost']:,.0f}")
-
-            c4, c5, c6 = st.columns(3)
-            c4.metric(result['accessory_label'], f"¥{result['accessory_cost']:,.0f}")
-            c5.metric("箱体费用", f"¥{result['cabinet_cost']:,.0f}")
-            c6.metric("小计", f"¥{result['subtotal']:,.0f}")
-
             if result.get('no_meter_warning'):
                 st.warning(result['no_meter_warning'], icon="⚠️")
 
-            # 铜排信息
+            # 构建表格数据
+            table_data = []
+            idx = 1
+            for comp in components:
+                amount = round(comp['unit_price'], 0) * comp['qty']
+                table_data.append({
+                    '序号': idx,
+                    '名称': comp['name'],
+                    '型号': comp['model'],
+                    '数量': comp['qty'],
+                    '单价(元)': f"¥{comp['unit_price']:.0f}",
+                    '金额(元)': f"¥{amount:,.0f}",
+                    '品牌': comp['brand'],
+                })
+                idx += 1
+
+            # 铜排行
+            cd = result['copper_detail']
+            copper_spec_str = f"TMY-{cd['copper_spec']['spec']}"
+            table_data.append({
+                '序号': idx,
+                '名称': '铜排',
+                '型号': copper_spec_str,
+                '数量': '—',
+                '单价(元)': '—',
+                '金额(元)': f"¥{result['copper_cost']:,.0f}",
+                '品牌': '江西/金来',
+            })
+            idx += 1
+
+            # 辅助材料行
+            table_data.append({
+                '序号': idx,
+                '名称': result['accessory_label'],
+                '型号': '—',
+                '数量': '—',
+                '单价(元)': '—',
+                '金额(元)': f"¥{result['accessory_cost']:,.0f}",
+                '品牌': '湖北/恒晟',
+            })
+            idx += 1
+
+            # 成套费行
+            table_data.append({
+                '序号': idx,
+                '名称': '成套费（组装费、企业管理费、税收、利润等）',
+                '型号': f"利润率{profit_rate*100:.0f}%",
+                '数量': '—',
+                '单价(元)': '—',
+                '金额(元)': f"¥{result['total_profit']:,.0f}",
+                '品牌': '宁波/海越',
+            })
+            idx += 1
+
+            # 箱体行
+            breaker_count = sum(c['qty'] for c in components if '断路器' in c.get('type', ''))
+            cabinet_label = f"箱体:GCS({result['name']}、{breaker_count}路)"
+            table_data.append({
+                '序号': idx,
+                '名称': cabinet_label,
+                '型号': '—',
+                '数量': '—',
+                '单价(元)': '—',
+                '金额(元)': f"¥{result['cabinet_cost']:,.0f}",
+                '品牌': '宁波/海越',
+            })
+
+            # 合计行
+            table_data.append({
+                '序号': '',
+                '名称': '**合计**',
+                '型号': '',
+                '数量': '',
+                '单价(元)': '',
+                '金额(元)': f"**¥{result['grand_total']:,.0f}**",
+                '品牌': '',
+            })
+
+            st.dataframe(pd.DataFrame(table_data), use_container_width=True, hide_index=True)
+
+            # 铜排信息（折叠）
             with st.expander("📐 铜排详情"):
-                cd = result['copper_detail']
                 st.write(f"""
                 - 总电流: {result['total_current']:,.0f}A
                 - 出线路数: {result['outgoing_circuits']}路
                 - 降容系数: {result['derate']}
                 - 降容后电流: {result['reduced_current']:,.0f}A
-                - 铜排规格: TMY-{cd['copper_spec']['spec']}
+                - 铜排规格: {copper_spec_str}
                 - 铜排截面积: {cd['copper_area_cm2']} cm²
                 - 三相铜排: ¥{cd['phase_cost']:,.0f}
                 - 零线: ¥{cd['neutral_cost']:,.0f}
@@ -1352,36 +1420,21 @@ def run_project_report(cabinet_list: list, copper_price: float):
                 - 电缆费用: ¥{cd['cable_cost']:,.0f}
                 """)
 
-            # 利润明细
-            with st.expander("💰 利润明细"):
-                profit_items = [
-                    ('元器件', result['comp_cost'], result['comp_profit']),
-                    ('铜排', result['copper_cost'], result['copper_profit']),
-                    ('辅助材料', result['accessory_cost'], result['accessory_profit']),
-                    ('箱体', result['cabinet_cost'], result['cabinet_profit']),
-                ]
-                profit_df = pd.DataFrame([
-                    {'项目': name, '成本': cost, '利润': profit,
-                     '利润率': f"{profit/cost*100:.1f}%" if cost > 0 else "0%"}
-                    for name, cost, profit in profit_items
-                ])
-                st.dataframe(profit_df, use_container_width=True, hide_index=True)
-
-            project_total_cost += result['subtotal']
+            project_total_cost += result['total_cost']
             project_total_profit += result['total_profit']
 
     # ─── 项目汇总 ───
     st.divider()
     st.subheader("📈 项目汇总")
 
-    profit_rate = (project_total_profit / project_total_cost * 100) if project_total_cost > 0 else 0
+    effective_rate = (project_total_profit / project_total_cost * 100) if project_total_cost > 0 else 0
     final_price = project_total_cost + project_total_profit
     tax_price = round(final_price * 1.13, 0)
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("总成本", f"¥{project_total_cost:,.0f}")
-    c2.metric("总利润", f"¥{project_total_profit:,.0f}")
-    c3.metric("利润率", f"{profit_rate:.1f}%")
+    c2.metric("成套费（利润）", f"¥{project_total_profit:,.0f}")
+    c3.metric("利润率", f"{profit_rate*100:.0f}%")
     c4.metric("柜子数量", f"{len(cabinet_results)}台")
 
     c5, c6 = st.columns(2)
@@ -1397,24 +1450,25 @@ def run_project_report(cabinet_list: list, copper_price: float):
                 '类型': r['type'],
                 '柜宽(m)': r['width'],
                 '元器件': f"¥{r['comp_cost']:,.0f}",
-                '电缆': f"¥{r['cable_cost']:,.0f}",
                 '铜排': f"¥{r['copper_cost']:,.0f}",
                 '辅助材料': f"¥{r['accessory_cost']:,.0f}",
                 '箱体': f"¥{r['cabinet_cost']:,.0f}",
-                '小计': f"¥{r['subtotal']:,.0f}",
-                '利润': f"¥{r['total_profit']:,.0f}",
+                '成本小计': f"¥{r['total_cost']:,.0f}",
+                '成套费': f"¥{r['total_profit']:,.0f}",
+                '合计': f"¥{r['grand_total']:,.0f}",
             })
         summary_data.append({
             '柜号': '合计', '类型': '', '柜宽(m)': '',
-            '元器件': '', '电缆': '', '铜排': '', '辅助材料': '', '箱体': '',
-            '小计': f"¥{project_total_cost:,.0f}",
-            '利润': f"¥{project_total_profit:,.0f}",
+            '元器件': '', '铜排': '', '辅助材料': '', '箱体': '',
+            '成本小计': f"¥{project_total_cost:,.0f}",
+            '成套费': f"¥{project_total_profit:,.0f}",
+            '合计': f"¥{final_price:,.0f}",
         })
         st.dataframe(pd.DataFrame(summary_data), use_container_width=True, hide_index=True)
 
     # CSV导出
     csv_data = generate_project_csv(cabinet_list, cabinet_results, project_total_cost,
-                                    project_total_profit, final_price, tax_price)
+                                    project_total_profit, final_price, tax_price, profit_rate)
     st.download_button(
         "📥 导出项目报价明细 (CSV)",
         data=csv_data,
@@ -1422,30 +1476,34 @@ def run_project_report(cabinet_list: list, copper_price: float):
         mime="text/csv",
     )
 
-def generate_project_csv(cabinet_list, cabinet_results, total_cost, total_profit, final_price, tax_price):
+def generate_project_csv(cabinet_list, cabinet_results, total_cost, total_profit, final_price, tax_price, profit_rate=0.16):
     """生成整个项目的CSV导出"""
-    lines = [f"项目名称,{st.session_state.project_name or '未命名项目'}", ""]
+    lines = [f"项目名称,{st.session_state.project_name or '未命名项目'}", f"利润率,{profit_rate*100:.0f}%", ""]
 
     for cab, result in zip(cabinet_list, cabinet_results):
         if not cab['components']:
             continue
         lines.append(f"=== {result['name']} ({result['type']}, {result['width']}m) ===")
-        lines.append("序号,名称,型号,电流(A),数量,单价,金额,品牌")
+        lines.append("序号,名称,型号,数量,单价(元),金额(元),品牌")
         for i, c in enumerate(cab['components']):
             amount = round(c['unit_price'], 0) * c['qty']
-            lines.append(f"{i+1},{c['name']},{c['model']},{c['current']},{c['qty']},{round(c['unit_price'],0)},{amount},{c['brand']}")
-        lines.append(f"元器件费用,{result['comp_cost']}")
-        lines.append(f"电缆费用,{result['cable_cost']}")
-        lines.append(f"铜排成本,{result['copper_cost']}")
-        lines.append(f"辅助材料,{result['accessory_cost']}")
-        lines.append(f"箱体费用,{result['cabinet_cost']}")
-        lines.append(f"小计,{result['subtotal']}")
-        lines.append(f"利润,{result['total_profit']}")
+            lines.append(f"{i+1},{c['name']},{c['model']},{c['qty']},{round(c['unit_price'],0)},{amount},{c['brand']}")
+        idx = len(cab['components']) + 1
+        cd = result['copper_detail']
+        lines.append(f"{idx},铜排,TMY-{cd['copper_spec']['spec']},—,—,{result['copper_cost']},江西/金来")
+        idx += 1
+        lines.append(f"{idx},{result['accessory_label']},—,—,—,{result['accessory_cost']},湖北/恒晟")
+        idx += 1
+        lines.append(f"{idx},成套费（组装费、企业管理费、税收、利润等）,利润率{profit_rate*100:.0f}%,—,—,{result['total_profit']},宁波/海越")
+        idx += 1
+        breaker_count = sum(c['qty'] for c in cab['components'] if '断路器' in c.get('type', ''))
+        lines.append(f"{idx},箱体:GCS({result['name']}、{breaker_count}路),—,—,—,{result['cabinet_cost']},宁波/海越")
+        lines.append(f"合计,,,,,,{result['grand_total']}")
         lines.append("")
 
     lines.append("=== 项目汇总 ===")
     lines.append(f"总成本,{total_cost}")
-    lines.append(f"总利润,{total_profit}")
+    lines.append(f"成套费（利润）,{total_profit}")
     lines.append(f"不含税报价,{final_price}")
     lines.append(f"含税报价(13%),{tax_price}")
 
