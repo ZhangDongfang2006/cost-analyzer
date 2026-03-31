@@ -917,7 +917,6 @@ def main():
                     edited = st.data_editor(
                         df_del, use_container_width=True, hide_index=True,
                         key=f"comp_list_{idx}",
-                        on_select="rerun",
                         selection_mode=["multi-row"],
                     )
                     selected = edited.selection.rows if hasattr(edited, 'selection') and edited.selection else []
