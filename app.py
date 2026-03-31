@@ -62,30 +62,14 @@ def load_price_db():
     df = df.dropna(subset=['型号', '名称']).reset_index(drop=True)
     return df.to_dict(orient='records')
 
-@st.cache_data
-def load_copper_specs():
-    """加载铜排规格映射表（实际工程载流量经验值，按载流量从小到大排序）"""
-    raw = [
-        {'spec': '15×2',   'width': 15,  'thickness': 2,  'area_mm2': 30,   'current': 125},
-        {'spec': '15×3',   'width': 15,  'thickness': 3,  'area_mm2': 45,   'current': 185},
-        {'spec': '20×3',   'width': 20,  'thickness': 3,  'area_mm2': 60,   'current': 245},
-        {'spec': '25×3',   'width': 25,  'thickness': 3,  'area_mm2': 75,   'current': 305},
-        {'spec': '20×4',   'width': 20,  'thickness': 4,  'area_mm2': 80,   'current': 320},
-        {'spec': '25×4',   'width': 25,  'thickness': 4,  'area_mm2': 100,  'current': 370},
-        {'spec': '30×3',   'width': 30,  'thickness': 3,  'area_mm2': 90,   'current': 355},
-        {'spec': '30×4',   'width': 30,  'thickness': 4,  'area_mm2': 120,  'current': 420},
-        {'spec': '40×4',   'width': 40,  'thickness': 4,  'area_mm2': 160,  'current': 560},
-        {'spec': '40×5',   'width': 40,  'thickness': 5,  'area_mm2': 200,  'current': 615},
-        {'spec': '50×5',   'width': 50,  'thickness': 5,  'area_mm2': 250,  'current': 755},
-        {'spec': '50×6',   'width': 50,  'thickness': 6,  'area_mm2': 300,  'current': 840},
-        {'spec': '60×6',   'width': 60,  'thickness': 6,  'area_mm2': 360,  'current': 990},
-        {'spec': '60×8',   'width': 60,  'thickness': 8,  'area_mm2': 480,  'current': 1160},
-        {'spec': '80×8',   'width': 80,  'thickness': 8,  'area_mm2': 640,  'current': 1490},
-        {'spec': '80×10',  'width': 80,  'thickness': 10, 'area_mm2': 800,  'current': 1670},
-        {'spec': '100×10', 'width': 100, 'thickness': 10, 'area_mm2': 1000, 'current': 2030},
-        {'spec': '120×10', 'width': 120, 'thickness': 10, 'area_mm2': 1200, 'current': 2330},
-    ]
-    return sorted(raw, key=lambda x: x['current'])
+COPPER_SPECS = [
+    {'spec': '40×5',  'width': 40, 'thickness': 5,  'area_mm2': 200, 'area_cm2': 0.20, 'current': 615},
+    {'spec': '50×5',  'width': 50, 'thickness': 5,  'area_mm2': 250, 'area_cm2': 0.25, 'current': 755},
+    {'spec': '60×6',  'width': 60, 'thickness': 6,  'area_mm2': 360, 'area_cm2': 0.36, 'current': 990},
+    {'spec': '60×8',  'width': 60, 'thickness': 8,  'area_mm2': 480, 'area_cm2': 0.48, 'current': 1160},
+    {'spec': '80×8',  'width': 80, 'thickness': 8,  'area_mm2': 640, 'area_cm2': 0.64, 'current': 1490},
+    {'spec': '80×10', 'width': 80, 'thickness': 10, 'area_mm2': 800, 'area_cm2': 0.80, 'current': 1670},
+]
 
 @st.cache_data
 def load_breaker_cable_params():
@@ -139,17 +123,16 @@ def extract_current_from_model(model: str) -> int:
     return 0
 
 def get_copper_spec_by_current(total_current: float) -> dict:
-    """根据总电流，找到载流量 >= 总电流的最小铜排规格"""
-    specs = load_copper_specs()
-    for spec in specs:
+    """根据总电流，找到载流量 >= 总电流的最小铜排规格，超过1670A返回80×10"""
+    for spec in COPPER_SPECS:
         if spec['current'] >= total_current:
             return spec
-    return specs[-1]  # 超过最大规格，返回120×10
+    return COPPER_SPECS[-1]  # 80×10
 
-def get_copper_threshold_by_current(total_current: float) -> float:
-    """返回选定铜排的载流量值(A)，用于成本计算"""
+def get_copper_area_by_current(total_current: float) -> float:
+    """返回选定铜排的截面积(cm²)，用于成本计算"""
     spec = get_copper_spec_by_current(total_current)
-    return spec['current']
+    return spec['area_cm2']
 
 def calc_cable_cost(breaker_type: str, current: int, qty: int,
                     cable_params: dict, copper_price: float, cabinet_width: float) -> float:
@@ -167,7 +150,7 @@ def calc_cable_cost(breaker_type: str, current: int, qty: int,
 
 def calc_copper_busbar_cost(total_cable_cost: float, total_current: float,
                             copper_price: float) -> dict:
-    L = get_copper_threshold_by_current(total_current)
+    L = get_copper_area_by_current(total_current)  # area_cm2
     K = copper_price
     density = 8.9
     phase_cost = 7 * L * K * density
@@ -182,7 +165,7 @@ def calc_copper_busbar_cost(total_cable_cost: float, total_current: float,
         'ground_cost': round(ground_cost, 2),
         'cable_cost': round(total_cable_cost, 2),
         'copper_spec': copper_spec,
-        'copper_threshold': L,
+        'copper_area_cm2': L,
         'total_current': round(total_current, 1),
     }
 
@@ -223,14 +206,13 @@ def calc_single_cabinet(cabinet: dict, copper_price: float, db: list) -> dict:
         total_current += comp['current'] * comp['qty']
 
     # 2. 铜排成本（根据柜内总电流独立计算）
+    # 出线路数 = 数显仪表数量（即出线回路数）
     outgoing_circuits = sum(c['qty'] for c in components
-                            if '断路器' in c.get('type', '') and '框架' not in c.get('type', ''))
-    # 降容系数：根据出线路数
-    if outgoing_circuits >= 6:
+                            if '仪表' in c.get('type', '') or '数显' in c.get('type', ''))
+    # 降容系数：根据出线路数（Excel: IF(D50>9,I50*0.7,IF(D50>5,I50*0.8,I50))）
+    if outgoing_circuits > 9:
         derate = 0.7
-    elif outgoing_circuits >= 4:
-        derate = 0.75
-    elif outgoing_circuits >= 2:
+    elif outgoing_circuits > 5:
         derate = 0.8
     else:
         derate = 1.0
@@ -490,18 +472,8 @@ def main():
                     qty_input = st.number_input("数量", min_value=0, value=1, key="qty_input")
 
                 with col3:
-                    auto_name = ''
-                    selected_name = st.session_state.get('_selected_name', '')
-                    if selected_name:
-                        st.session_state.pop('_selected_name', None)
-                    if model_input:
-                        match = lookup_price(model_input, db)
-                        if match:
-                            auto_name = match['name']
-                    # 只在有新值时更新name_input
-                    if auto_name:
-                        st.session_state.name_input = auto_name
-                    name_input = st.text_input("名称", key="name_input", placeholder="自动填充")
+                    # placeholder for spacing
+                    st.empty()
 
                 col_a, col_b = st.columns([1, 1])
                 with col_a:
@@ -514,26 +486,43 @@ def main():
                         st.caption(f"💡 自动识别: {auto_current}A（可手动修改）")
 
                 with col_b:
-                    breaker_type = st.selectbox("类型", ["塑壳断路器", "框架断路器", "电流互感器",
-                                                         "数显仪表", "其他"], key="type_input")
+                    use_custom_type = st.checkbox("自定义类型", key="custom_type_cb", value=False)
+                    if use_custom_type:
+                        custom_type = st.text_input("类型", key="custom_type_input", placeholder="输入自定义类型")
+                        preset_type = ''
+                    else:
+                        preset_type = st.selectbox("类型", ["塑壳断路器", "框架断路器", "电流互感器",
+                                                             "数显仪表", "其他"], key="type_input")
+                        custom_type = ''
 
                 if st.button("✅ 添加到清单", type="primary", use_container_width=True):
                     if model_input:
                         match = lookup_price(model_input, db)
                         current = current_input if current_input > 0 else extract_current_from_model(model_input)
+                        comp_type = custom_type if use_custom_type else preset_type
                         component = {
                             'model': model_input,
-                            'name': name_input or (match['name'] if match else '未知'),
+                            'name': comp_type,
                             'qty': qty_input,
                             'current': current,
-                            'type': breaker_type,
+                            'type': comp_type,
                             'unit_price': match['unit_price'] if match else 0,
                             'retail_price': match['retail_price'] if match else 0,
                             'brand': match['brand'] if match else '未找到',
                             'matched': match is not None,
                         }
-                        st.session_state.cabinet_list[idx]['components'].append(component)
-                        st.success(f"✅ 已添加到 {cab['name']}: {model_input} × {qty_input}")
+                        # 合并同型号
+                        existing = None
+                        for c in st.session_state.cabinet_list[idx]['components']:
+                            if c['model'] == model_input:
+                                existing = c
+                                break
+                        if existing:
+                            existing['qty'] += qty_input
+                            st.success(f"✅ 已合并 {cab['name']}: {model_input} 数量→{existing['qty']}")
+                        else:
+                            st.session_state.cabinet_list[idx]['components'].append(component)
+                            st.success(f"✅ 已添加到 {cab['name']}: {model_input} × {qty_input}")
                         st.rerun()
                     else:
                         st.warning("请填写型号和数量")
@@ -755,7 +744,8 @@ def run_project_report(cabinet_list: list, copper_price: float, db: list):
                 - 出线路数: {result['outgoing_circuits']}路
                 - 降容系数: {result['derate']}
                 - 降容后电流: {result['reduced_current']:,.0f}A
-                - 铜排规格: TMY-{cd['copper_spec']['width']}×{cd['copper_spec']['thickness']}
+                - 铜排规格: TMY-{cd['copper_spec']['spec']}
+                - 铜排截面积: {cd['copper_area_cm2']} cm²
                 - 三相铜排: ¥{cd['phase_cost']:,.0f}
                 - 零线: ¥{cd['neutral_cost']:,.0f}
                 - 地线: ¥{cd['ground_cost']:,.0f}
