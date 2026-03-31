@@ -657,7 +657,12 @@ def main():
                         preset_type = ''
                     else:
                         type_options = ["塑壳断路器", "框架断路器", "电流互感器", "数显仪表", "其他"]
-                        default_type = auto_type if auto_type in type_options else type_options[0]
+                        if auto_type and auto_type in type_options:
+                            default_type = auto_type
+                        else:
+                            # 无法识别时不默认任何类型，让用户手动选择
+                            type_options = ["（请选择类型）", "塑壳断路器", "框架断路器", "电流互感器", "数显仪表", "其他"]
+                            default_type = type_options[0]
                         # 动态key确保型号变化时selectbox重新初始化
                         type_key = f"type_input_{model_input or '_empty'}"
                         preset_type = st.selectbox("类型", type_options, index=type_options.index(default_type), key=type_key)
@@ -665,37 +670,42 @@ def main():
                             st.caption(f"💡 价格库类型: {auto_type}，请选择最接近的类型或自定义")
                         elif auto_type and auto_type in type_options:
                             st.caption(f"💡 已自动匹配类型: {auto_type}")
+                        elif not auto_type:
+                            st.warning("⚠️ 未在价格库中找到该型号，请手动选择类型！")
                         custom_type = ''
 
                 if st.button("✅ 添加到清单", type="primary", use_container_width=True):
                     if model_input:
-                        match = lookup_price(model_input)
-                        current = current_input if current_input > 0 else extract_current_from_model(model_input)
                         comp_type = custom_type if use_custom_type else preset_type
-                        component = {
-                            'model': model_input,
-                            'name': comp_type,
-                            'qty': qty_input,
-                            'current': current,
-                            'type': comp_type,
-                            'unit_price': match['unit_price'] if match else 0,
-                            'retail_price': match['retail_price'] if match else 0,
-                            'brand': match['brand'] if match else '未找到',
-                            'matched': match is not None,
-                        }
-                        # 合并同型号
-                        existing = None
-                        for c in st.session_state.cabinet_list[idx]['components']:
-                            if c['model'] == model_input:
-                                existing = c
-                                break
-                        if existing:
-                            existing['qty'] += qty_input
-                            st.success(f"✅ 已合并 {cab['name']}: {model_input} 数量→{existing['qty']}")
+                        if comp_type.startswith('（请选择'):
+                            st.error("❌ 请先选择元器件类型！未识别的型号需要手动选择类型，否则成本计算会出错。")
                         else:
-                            st.session_state.cabinet_list[idx]['components'].append(component)
-                            st.success(f"✅ 已添加到 {cab['name']}: {model_input} × {qty_input}")
-                        st.rerun()
+                            match = lookup_price(model_input)
+                            current = current_input if current_input > 0 else extract_current_from_model(model_input)
+                            component = {
+                                'model': model_input,
+                                'name': comp_type,
+                                'qty': qty_input,
+                                'current': current,
+                                'type': comp_type,
+                                'unit_price': match['unit_price'] if match else 0,
+                                'retail_price': match['retail_price'] if match else 0,
+                                'brand': match['brand'] if match else '未找到',
+                                'matched': match is not None,
+                            }
+                            # 合并同型号
+                            existing = None
+                            for c in st.session_state.cabinet_list[idx]['components']:
+                                if c['model'] == model_input:
+                                    existing = c
+                                    break
+                            if existing:
+                                existing['qty'] += qty_input
+                                st.success(f"✅ 已合并 {cab['name']}: {model_input} 数量→{existing['qty']}")
+                            else:
+                                st.session_state.cabinet_list[idx]['components'].append(component)
+                                st.success(f"✅ 已添加到 {cab['name']}: {model_input} × {qty_input}")
+                            st.rerun()
                     else:
                         st.warning("请填写型号和数量")
 
@@ -886,6 +896,9 @@ def main():
                 display_data = []
                 for i, comp in enumerate(components):
                     amount = round(comp['unit_price'], 0) * comp['qty']
+                    status = '✅' if comp['matched'] else '⚠️未匹配'
+                    if not comp.get('type') or comp['type'].startswith('（'):
+                        status = '❌类型未设置'
                     display_data.append({
                         '序号': i + 1,
                         '名称': comp['name'],
@@ -895,11 +908,16 @@ def main():
                         '单价': f"¥{comp['unit_price']:.0f}",
                         '金额': f"¥{amount:,.0f}",
                         '品牌': comp['brand'],
-                        '状态': '✅' if comp['matched'] else '⚠️未匹配',
+                        '状态': status,
                     })
 
                 df_display = pd.DataFrame(display_data)
                 st.dataframe(df_display, use_container_width=True, hide_index=True)
+
+                # 类型未设置的警告
+                unset = [c for c in components if not c.get('type') or c['type'].startswith('（')]
+                if unset:
+                    st.error(f"⚠️ 有 {len(unset)} 个元器件类型未设置，将无法正确计算成本！请返回编辑。")
 
                 # 删除按钮
                 cols = st.columns(min(len(components), 10))
