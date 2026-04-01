@@ -1457,15 +1457,45 @@ def run_project_report(cabinet_list: list, copper_price: float):
     final_price = project_total_cost + project_total_profit
     tax_price = round(final_price * 1.13, 0)
 
+    # 建议利润率（阶梯公式算出的）
+    suggested_rate = effective_rate
+
+    # 可编辑利润率
+    col_rate, _, col_diff = st.columns([2, 1, 2])
+    with col_rate:
+        manual_rate = st.number_input(
+            "手动调整利润率(%)", min_value=0.0, max_value=100.0,
+            value=round(suggested_rate, 1), step=0.5, format="%.1f",
+            help="建议利润率为阶梯公式自动计算值，可手动调整"
+        ) / 100
+
+    # 计算手动利润率下的价格
+    manual_profit = project_total_cost * manual_rate
+    manual_final = project_total_cost + manual_profit
+    manual_tax = round(manual_final * 1.13, 0)
+    price_diff = manual_final - final_price
+
+    with col_diff:
+        if abs(manual_rate - suggested_rate/100) > 0.001:
+            diff_color = "🟢" if price_diff > 0 else "🔴"
+            st.metric(
+                f"价格差距（手动 vs 建议）",
+                f"{diff_color} ¥{price_diff:+,.0f}",
+                delta=f"利润率差 {((manual_rate - suggested_rate/100)*100):+.1f}%"
+            )
+
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("总成本", f"¥{project_total_cost:,.0f}")
-    c2.metric("成套费（利润）", f"¥{project_total_profit:,.0f}")
-    c3.metric("整体利润率", f"{project_total_profit/project_total_cost*100:.1f}%" if project_total_cost > 0 else "0%")
+    c2.metric("建议成套费", f"¥{project_total_profit:,.0f}", delta=f"利润率 {suggested_rate:.1f}%")
+    c3.metric("手动成套费", f"¥{manual_profit:,.0f}", delta=f"利润率 {manual_rate*100:.1f}%")
     c4.metric("柜子数量", f"{len(cabinet_results)}台")
 
-    c5, c6 = st.columns(2)
-    c5.metric("不含税报价", f"¥{final_price:,.0f}")
-    c6.metric("含税报价 (13%)", f"¥{tax_price:,.0f}")
+    # 两种报价对比
+    col_s, col_m = st.columns(2)
+    with col_s:
+        st.metric("建议含税报价", f"¥{tax_price:,.0f}")
+    with col_m:
+        st.metric("手动含税报价", f"¥{manual_tax:,.0f}", delta=f"¥{manual_tax - tax_price:+,.0f}")
 
     # 汇总表
     with st.expander("📋 柜子费用汇总"):
