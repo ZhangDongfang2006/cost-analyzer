@@ -250,6 +250,16 @@ def load_breaker_cable_params():
         200: 95, 225: 120, 250: 120,  # 250A及以上用铜排，此值仅备用
     }
 
+
+def get_breaker_poles(model: str) -> int:
+    """从型号判断断路器极数: 1P/2P → 1(单相), 3P/4P → 3(三相), 默认3"""
+    import re
+    m = re.search(r'(\d)\s*[Pp]', model.upper())
+    if m:
+        poles = int(m.group(1))
+        return 1 if poles <= 2 else 3
+    return 3  # 默认三相
+
 # ─── 核心计算函数 ─────────────────────────────────────────
 
 def lookup_price_by_name(name: str, db=None) -> dict:
@@ -300,8 +310,8 @@ def get_copper_area_by_current(total_current: float) -> float:
     spec = get_copper_spec_by_current(total_current)
     return spec['area_cm2']
 
-def calc_cable_cost(breaker_type: str, current: int, qty: int,
-                    cable_params: dict, copper_price: float, cabinet_width: float) -> float:
+def calc_cable_cost(breaker_type: str, current: int, qty: int, model: str,
+                    cable_params: dict, copper_price: float) -> float:
     if qty <= 0 or current <= 0:
         return 0.0
     if breaker_type == 'frame':
@@ -309,11 +319,13 @@ def calc_cable_cost(breaker_type: str, current: int, qty: int,
         spec = get_copper_spec_by_current(current)
         return 2.5 * qty * spec['area_cm2'] * copper_price * 8.9 * 3
     else:
-        # 塑壳断路器(≤160A): 用标准电缆，三相2m + 单相0.7m = 2.7m
+        # 塑壳断路器(≤160A): 用标准电缆
         cable_area = cable_params.get(current, 0)
         if cable_area == 0:
             return 0.0
-        return cable_area * qty * 2.7 * copper_price * 8.9 / 1000
+        poles = get_breaker_poles(model)
+        cable_length = 0.7 if poles <= 1 else 2.0  # 单相0.7m, 三相2m
+        return cable_area * qty * cable_length * copper_price * 8.9 / 1000
 
 def calc_copper_busbar_cost(total_cable_cost: float, total_current: float,
                             copper_price: float) -> dict:
@@ -369,7 +381,7 @@ def calc_single_cabinet(cabinet: dict, copper_price: float) -> dict:
 
         breaker_type = 'frame' if '框架' in comp.get('type', '') else 'mccb'
         cable = calc_cable_cost(breaker_type, comp['current'], comp['qty'],
-                               cable_params, copper_price, width)
+                               comp.get('model', ''), cable_params, copper_price)
         total_cable_cost += cable
         total_current += comp['current'] * comp['qty']
 
@@ -1038,9 +1050,11 @@ def main():
   100         35
   125         50
   160         70""", language="text")
-            st.markdown("- 160A及以下用电缆，三相2m + 单相0.7m = 2.7m")
-            st.markdown("- 250A及以上用铜排（见框架断路器公式）")
-            st.code("电缆费 = 截面积(mm²) × 数量 × 2.7 × 铜价 × 8.9 / 1000", language="text")
+            st.markdown("- 160A及以下用电缆，250A及以上用铜排（见框架断路器公式）")
+            st.code("""电缆费 = 截面积(mm²) × 数量 × 长度(m) × 铜价 × 8.9 / 1000
+
+单相断路器(1P/2P): 长度 = 0.7m
+三相断路器(3P/4P): 长度 = 2.0m""", language="text")
 
             st.markdown("#### 数显仪表电缆费用")
             st.code("电缆费 = 柜宽 × 4 × 铜价 × 8.9 + 柜宽 × 0.8 × 铜价 × 8.9", language="text")
