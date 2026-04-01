@@ -370,11 +370,15 @@ def calc_single_cabinet(cabinet: dict, copper_price: float, profit_rate: float =
     breaker_count_for_circuits = sum(c['qty'] for c in components if '断路器' in c.get('type', ''))
     # 出线路数始终按断路器数量计算
     outgoing_circuits = breaker_count_for_circuits
-    # 降容系数：根据出线路数（Excel: IF(D50>9,I50*0.7,IF(D50>5,I50*0.8,I50))）
-    if outgoing_circuits > 9:
+    # 分散系数：根据出线路数（参考GB/T 7251.1标准）
+    if outgoing_circuits >= 10:
+        derate = 0.6
+    elif outgoing_circuits >= 6:
         derate = 0.7
-    elif outgoing_circuits > 5:
+    elif outgoing_circuits >= 4:
         derate = 0.8
+    elif outgoing_circuits >= 2:
+        derate = 0.9
     else:
         derate = 1.0
 
