@@ -345,8 +345,8 @@ def calc_profit(amount: float) -> float:
         return (0.29 - 0.000003125 * amount) * amount
 
 def calc_accessory_cost(outgoing_circuits: int) -> float:
-    """辅助材料费用: 固定值 2266 = 63×2 + 100 + 250×2 + 400×3"""
-    return 63 * 2 + 100 + 250 * 2 + 400 * 3  # 固定2266
+    """辅助材料费用: 价格库未找到时的fallback，提示用户手动输入"""
+    return 0  # 价格库未匹配时返回0，由用户手动输入
 
 def calc_single_cabinet(cabinet: dict, copper_price: float) -> dict:
     """计算单台柜子的所有费用"""
@@ -421,7 +421,7 @@ def calc_single_cabinet(cabinet: dict, copper_price: float) -> dict:
         accessory_cost = accessory_match['unit_price']
         accessory_matched = True
     else:
-        accessory_cost = calc_accessory_cost(outgoing_circuits)  # fallback 1926
+        accessory_cost = calc_accessory_cost(outgoing_circuits)  # fallback 0，用户手动输入
         accessory_matched = False
 
     # 4. 箱体费用: 2200 + 400×断路器数量（只算断路器）
@@ -1054,7 +1054,7 @@ def main():
         # 5. 辅助材料费用
         with st.expander("🔧 5. 辅助材料费用", expanded=False):
             st.code("辅助材料 = 从价格库查找，名称格式：辅助材料（出线柜，N路出线）", language="text")
-            st.markdown("- 未找到时使用默认值1926元并提示用户手动输入")
+            st.markdown("- 未找到时默认0元并提示用户手动输入")
 
         # 6. 箱体费用
         with st.expander("📦 6. 箱体费用", expanded=False):
