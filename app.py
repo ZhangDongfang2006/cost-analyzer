@@ -314,8 +314,8 @@ def calc_cable_cost(breaker_type: str, current: int, qty: int, model: str,
                     cable_params: dict, copper_price: float) -> float:
     if qty <= 0 or current <= 0:
         return 0.0
-    if breaker_type == 'frame':
-        # 框架断路器(≥250A): 用铜排材料，出线长度2.5m，三相
+    if breaker_type == 'copper':
+        # ≥250A: 用铜排材料，出线长度2.5m，三相
         spec = get_copper_spec_by_current(current)
         return 2.5 * qty * spec['area_cm2'] * copper_price * 8.9 * 3
     else:
@@ -379,7 +379,7 @@ def calc_single_cabinet(cabinet: dict, copper_price: float) -> dict:
         amount = rounded_price * comp['qty']
         total_comp_cost += amount
 
-        breaker_type = 'frame' if '框架' in comp.get('type', '') else 'mccb'
+        breaker_type = 'copper' if comp['current'] >= 250 else 'mccb'
         cable = calc_cable_cost(breaker_type, comp['current'], comp['qty'],
                                comp.get('model', ''), cable_params, copper_price)
         total_cable_cost += cable
@@ -1040,8 +1040,9 @@ def main():
             ])
             st.dataframe(cable_table, use_container_width=True, hide_index=True)
 
-            st.markdown("#### 框架断路器")
+            st.markdown("#### 250A及以上断路器（铜排出线）")
             st.code("电缆费 = 2.5 × 数量 × 铜排截面积(cm²) × 铜价 × 8.9 × 3", language="text")
+            st.markdown("- 250A及以上（塑壳/框架）均用铜排")
 
             st.markdown("#### 塑壳断路器电缆截面积对照表")
             st.code("""电流(A)    截面积(mm²)
@@ -1050,7 +1051,7 @@ def main():
   100         35
   125         50
   160         70""", language="text")
-            st.markdown("- 160A及以下用电缆，250A及以上用铜排（见框架断路器公式）")
+            st.markdown("- 160A及以下用电缆，250A及以上用铜排")
             st.code("""电缆费 = 截面积(mm²) × 数量 × 长度(m) × 铜价 × 8.9 / 1000
 
 单相断路器(1P/2P): 长度 = 1×0.7 = 0.7m
