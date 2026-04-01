@@ -310,39 +310,23 @@ def get_copper_area_by_current(total_current: float) -> float:
     spec = get_copper_spec_by_current(total_current)
     return spec['area_cm2']
 
-def calc_cable_cost(breaker_type: str, current: int, qty: int, model: str,
-                    cable_params: dict, copper_price: float) -> float:
-    if qty <= 0 or current <= 0:
-        return 0.0
-    if breaker_type == 'copper':
-        # ≥250A: 用铜排材料，出线长度2.5m，三相
-        spec = get_copper_spec_by_current(current)
-        return 2.5 * qty * spec['area_cm2'] * copper_price * 8.9 * 3
-    else:
-        # 塑壳断路器(≤160A): 用标准电缆
-        cable_area = cable_params.get(current, 0)
-        if cable_area == 0:
-            return 0.0
-        poles = get_breaker_poles(model)
-        cable_length = poles * 0.7  # 每P 0.7m
-        return cable_area * qty * cable_length * copper_price * 8.9 / 1000
-
-def calc_copper_busbar_cost(total_cable_cost: float, total_current: float,
+def calc_copper_busbar_cost(extra_copper_cost: float, total_current: float,
                             copper_price: float) -> dict:
+    """铜排成本 = 三相母线 + 零线 + 地线 + 额外铜排费用(≥250A出线)"""
     L = get_copper_area_by_current(total_current)  # area_cm2
     K = copper_price
     density = 8.9
     phase_cost = 7 * L * K * density
     neutral_cost = 2 * (L / 2) * K * density
     ground_cost = 2 * (L / 4) * K * density
-    copper_cost = round(phase_cost + neutral_cost + ground_cost + total_cable_cost, 0)
+    copper_cost = round(phase_cost + neutral_cost + ground_cost + extra_copper_cost, 0)
     copper_spec = get_copper_spec_by_current(total_current)
     return {
         'total_cost': copper_cost,
         'phase_cost': round(phase_cost, 2),
         'neutral_cost': round(neutral_cost, 2),
         'ground_cost': round(ground_cost, 2),
-        'cable_cost': round(total_cable_cost, 2),
+        'extra_copper_cost': round(extra_copper_cost, 2),
         'copper_spec': copper_spec,
         'copper_area_cm2': L,
         'total_current': round(total_current, 1),
@@ -373,16 +357,25 @@ def calc_single_cabinet(cabinet: dict, copper_price: float) -> dict:
     total_comp_cost = 0
     total_cable_cost = 0
     total_current = 0
+    high_current_copper_cost = 0  # ≥250A铜排出线费用，归入铜排
 
     for comp in components:
         rounded_price = round(comp['unit_price'], 0)
         amount = rounded_price * comp['qty']
         total_comp_cost += amount
 
-        breaker_type = 'copper' if comp['current'] >= 250 else 'mccb'
-        cable = calc_cable_cost(breaker_type, comp['current'], comp['qty'],
-                               comp.get('model', ''), cable_params, copper_price)
-        total_cable_cost += cable
+        if comp['current'] >= 250:
+            # ≥250A: 铜排出线，费用归入铜排
+            spec = get_copper_spec_by_current(comp['current'])
+            cost = 2.5 * comp['qty'] * spec['area_cm2'] * copper_price * 8.9 * 3
+            high_current_copper_cost += cost
+        else:
+            # ≤160A: 电缆
+            cable_area = cable_params.get(comp['current'], 0)
+            if cable_area > 0:
+                poles = get_breaker_poles(comp.get('model', ''))
+                cable = cable_area * comp['qty'] * (poles * 0.7) * copper_price * 8.9 / 1000
+                total_cable_cost += cable
         total_current += comp['current'] * comp['qty']
 
     # 2. 铜排成本（根据柜内总电流独立计算）
@@ -410,7 +403,8 @@ def calc_single_cabinet(cabinet: dict, copper_price: float) -> dict:
         total_cable_cost += meter_cable_cost
 
     reduced_current = total_current * derate
-    copper_detail = calc_copper_busbar_cost(total_cable_cost, reduced_current, copper_price)
+    copper_detail = calc_copper_busbar_cost(high_current_copper_cost, reduced_current, copper_price)
+    copper_detail['high_current_copper_cost'] = high_current_copper_cost  # 记录≥250A铜排出线费用
 
     # 3. 辅助材料：从价格库查找
     # 辅助材料：用模糊匹配查找（匹配包含"N路"或"N路出线"的辅助材料记录）
@@ -1392,20 +1386,20 @@ def run_project_report(cabinet_list: list, copper_price: float):
                 '型号': copper_spec_str,
                 '数量': '—',
                 '单价(元)': '—',
-                '金额(元)': f"¥{cd['total_cost'] - cd['cable_cost']:,.0f}",
+                '金额(元)': f"¥{cd['total_cost'] - cd['extra_copper_cost']:,.0f}",
                 '品牌': '江西/金来',
             })
             idx += 1
 
             # 电缆行
-            if cd['cable_cost'] > 0:
+            if result['cable_cost'] > 0:
                 table_data.append({
                     '序号': idx,
                     '名称': '电缆',
                     '型号': '—',
                     '数量': '—',
                     '单价(元)': '—',
-                    '金额(元)': f"¥{cd['cable_cost']:,.0f}",
+                    '金额(元)': f"¥{result['cable_cost']:,.0f}",
                     '品牌': '',
                 })
                 idx += 1
@@ -1472,7 +1466,8 @@ def run_project_report(cabinet_list: list, copper_price: float):
                 - 三相铜排: ¥{cd['phase_cost']:,.0f}
                 - 零线: ¥{cd['neutral_cost']:,.0f}
                 - 地线: ¥{cd['ground_cost']:,.0f}
-                - 电缆费用: ¥{cd['cable_cost']:,.0f}
+                - ≥250A铜排出线: ¥{cd['high_current_copper_cost']:,.0f}
+                - 电缆费用(≤160A): ¥{result['cable_cost']:,.0f}
                 """)
 
             project_total_cost += result['total_cost']
