@@ -1352,10 +1352,23 @@ def run_project_report(cabinet_list: list, copper_price: float):
                 '型号': copper_spec_str,
                 '数量': '—',
                 '单价(元)': '—',
-                '金额(元)': f"¥{result['copper_cost']:,.0f}",
+                '金额(元)': f"¥{cd['total_cost'] - cd['cable_cost']:,.0f}",
                 '品牌': '江西/金来',
             })
             idx += 1
+
+            # 电缆行
+            if cd['cable_cost'] > 0:
+                table_data.append({
+                    '序号': idx,
+                    '名称': '电缆',
+                    '型号': '—',
+                    '数量': '—',
+                    '单价(元)': '—',
+                    '金额(元)': f"¥{cd['cable_cost']:,.0f}",
+                    '品牌': '',
+                })
+                idx += 1
 
             # 辅助材料行
             table_data.append({
