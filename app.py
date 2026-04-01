@@ -396,15 +396,18 @@ def calc_single_cabinet(cabinet: dict, copper_price: float) -> dict:
     else:
         derate = 1.0
 
-    # 数显仪表电缆费用：柜宽×4×铜价×8.9 + 柜宽×0.8×铜价×8.9
+    reduced_current = total_current * derate
+
+    # 数显仪表铜排：ABCN四相(每相1m) + PE(0.8m)，截面积按降容后总电流查表
+    meter_copper_cost = 0
     has_meter = meter_count > 0
     if has_meter:
-        meter_cable_cost = width * 4 * copper_price * 8.9 + width * 0.8 * copper_price * 8.9
-        total_cable_cost += meter_cable_cost
+        meter_area = get_copper_area_by_current(reduced_current)  # cm²
+        meter_copper_cost = width * meter_area * copper_price * 8.9 * 4.8  # 4(ABCN) + 0.8(PE)
 
-    reduced_current = total_current * derate
-    copper_detail = calc_copper_busbar_cost(high_current_copper_cost, reduced_current, copper_price)
-    copper_detail['high_current_copper_cost'] = high_current_copper_cost  # 记录≥250A铜排出线费用
+    copper_detail = calc_copper_busbar_cost(high_current_copper_cost + meter_copper_cost, reduced_current, copper_price)
+    copper_detail['high_current_copper_cost'] = high_current_copper_cost
+    copper_detail['meter_copper_cost'] = meter_copper_cost
 
     # 3. 辅助材料：从价格库查找
     # 辅助材料：用模糊匹配查找（匹配包含"N路"或"N路出线"的辅助材料记录）
@@ -1051,9 +1054,12 @@ def main():
 单相断路器(1P/2P): 长度 = 1×0.7 = 0.7m
 三相断路器(3P/4P): 长度 = 3×0.7 = 2.1m""", language="text")
 
-            st.markdown("#### 数显仪表电缆费用")
-            st.code("电缆费 = 柜宽 × 4 × 铜价 × 8.9 + 柜宽 × 0.8 × 铜价 × 8.9", language="text")
-            st.markdown("> 仅当柜内包含数显仪表时计算此费用。")
+            st.markdown("#### 数显仪表铜排费用")
+            st.code("""有仪表时: 仪表铜排费 = 柜宽 × 截面积(cm²) × 铜价 × 8.9 × 4.8
+
+截面积 = 根据降容后总电流(I50)查铜排选型表
+4.8 = ABCN四相(每相1m) + PE排(0.8m)""", language="text")
+            st.markdown("> 仅当柜内包含数显仪表时计算此费用，归入铜排成本。")
 
         # 3. 铜排成本公式
         with st.expander("🟫 3. 铜排成本公式（H51）", expanded=False):
@@ -1467,6 +1473,7 @@ def run_project_report(cabinet_list: list, copper_price: float):
                 - 零线: ¥{cd['neutral_cost']:,.0f}
                 - 地线: ¥{cd['ground_cost']:,.0f}
                 - ≥250A铜排出线: ¥{cd['high_current_copper_cost']:,.0f}
+                - 仪表铜排(ABCN+PE): ¥{cd['meter_copper_cost']:,.0f}
                 - 电缆费用(≤160A): ¥{result['cable_cost']:,.0f}
                 """)
 
