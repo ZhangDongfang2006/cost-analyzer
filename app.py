@@ -242,10 +242,12 @@ COPPER_SPECS = [
 
 @st.cache_data
 def load_breaker_cable_params():
-    """加载断路器电缆参数: 电流(A) → 电缆宽度(mm)"""
+    """加载断路器电缆参数: 电流(A) → 标准电缆截面积(mm²)
+    参考 GB/T 7251 标准及行业常用对照表
+    """
     return {
-        63: 80, 100: 120, 160: 120, 250: 192, 400: 192,
-        500: 401, 630: 401, 800: 0, 1000: 0, 1250: 0,
+        63: 16, 80: 25, 100: 35, 125: 50, 160: 70,
+        200: 95, 225: 120, 250: 120,  # 250A及以上用铜排，此值仅备用
     }
 
 # ─── 核心计算函数 ─────────────────────────────────────────
@@ -303,14 +305,15 @@ def calc_cable_cost(breaker_type: str, current: int, qty: int,
     if qty <= 0 or current <= 0:
         return 0.0
     if breaker_type == 'frame':
+        # 框架断路器(≥250A): 用铜排材料，出线长度2.5m，三相
         spec = get_copper_spec_by_current(current)
         return 2.5 * qty * spec['area_cm2'] * copper_price * 8.9 * 3
     else:
-        cable_width = cable_params.get(current, 0)
-        if cable_width == 0:
+        # 塑壳断路器(≤160A): 用标准电缆，三相2m + 单相0.7m = 2.7m
+        cable_area = cable_params.get(current, 0)
+        if cable_area == 0:
             return 0.0
-        factor = (cabinet_width / 105 - 1) / 2 + 1
-        return cable_width * qty * factor
+        return cable_area * qty * 2.7 * copper_price * 8.9 / 1000
 
 def calc_copper_busbar_cost(total_cable_cost: float, total_current: float,
                             copper_price: float) -> dict:
@@ -1027,6 +1030,17 @@ def main():
 
             st.markdown("#### 框架断路器")
             st.code("电缆费 = 2.5 × 数量 × 铜排截面积(cm²) × 铜价 × 8.9 × 3", language="text")
+
+            st.markdown("#### 塑壳断路器电缆截面积对照表")
+            st.code("""电流(A)    截面积(mm²)
+  63          16
+  80          25
+  100         35
+  125         50
+  160         70""", language="text")
+            st.markdown("- 160A及以下用电缆，三相2m + 单相0.7m = 2.7m")
+            st.markdown("- 250A及以上用铜排（见框架断路器公式）")
+            st.code("电缆费 = 截面积(mm²) × 数量 × 2.7 × 铜价 × 8.9 / 1000", language="text")
 
             st.markdown("#### 数显仪表电缆费用")
             st.code("电缆费 = 柜宽 × 4 × 铜价 × 8.9 + 柜宽 × 0.8 × 铜价 × 8.9", language="text")
