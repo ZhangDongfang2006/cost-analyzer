@@ -1393,7 +1393,7 @@ def run_project_report(cabinet_list: list, copper_price: float):
                 '型号': copper_spec_str,
                 '数量': '—',
                 '单价(元)': '—',
-                '金额(元)': f"¥{cd['total_cost'] - cd['extra_copper_cost']:,.0f}",
+                '金额(元)': f"¥{cd['total_cost']:,.0f}",
                 '品牌': '江西/金来',
             })
             idx += 1
