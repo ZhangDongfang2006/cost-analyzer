@@ -376,7 +376,8 @@ def calc_single_cabinet(cabinet: dict, copper_price: float) -> dict:
                 poles = get_breaker_poles(comp.get('model', ''))
                 cable = cable_area * comp['qty'] * (poles * 0.7) * copper_price * 8.9 / 1000
                 total_cable_cost += cable
-        total_current += comp['current'] * comp['qty']
+        if '断路器' in comp.get('type', ''):
+            total_current += comp['current'] * comp['qty']
 
     # 2. 铜排成本（根据柜内总电流独立计算）
     # 出线路数：优先使用数显仪表数量，如无仪表则使用断路器数量
@@ -1469,11 +1470,7 @@ def run_project_report(cabinet_list: list, copper_price: float):
                 - 降容后电流: {result['reduced_current']:,.0f}A
                 - 铜排规格: {copper_spec_str}
                 - 铜排截面积: {cd['copper_area_cm2']} cm²
-                - 三相铜排: ¥{cd['phase_cost']:,.0f}
-                - 零线: ¥{cd['neutral_cost']:,.0f}
-                - 地线: ¥{cd['ground_cost']:,.0f}
-                - ≥250A铜排出线: ¥{cd['high_current_copper_cost']:,.0f}
-                - 仪表铜排(ABCN+PE): ¥{cd['meter_copper_cost']:,.0f}
+                - 铜排费用合计: ¥{cd['total_cost']:,.0f}（含主母线+≥250A出线+仪表铜排）
                 - 电缆费用(≤160A): ¥{result['cable_cost']:,.0f}
                 """)
 
