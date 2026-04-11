@@ -238,6 +238,8 @@ COPPER_SPECS = [
     {'spec': '60×8',  'width': 60, 'thickness': 8,  'area_mm2': 480, 'area_cm2': 0.48, 'current': 1160},
     {'spec': '80×8',  'width': 80, 'thickness': 8,  'area_mm2': 640, 'area_cm2': 0.64, 'current': 1490},
     {'spec': '80×10', 'width': 80, 'thickness': 10, 'area_mm2': 800, 'area_cm2': 0.80, 'current': 1670},
+    {'spec': '100×10', 'width': 100, 'thickness': 10, 'area_mm2': 1000, 'area_cm2': 1.00, 'current': 2030},
+    {'spec': '120×10', 'width': 120, 'thickness': 10, 'area_mm2': 1200, 'area_cm2': 1.20, 'current': 2330},
 ]
 
 @st.cache_data
