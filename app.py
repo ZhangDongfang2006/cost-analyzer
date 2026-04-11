@@ -1026,15 +1026,15 @@ def main():
             st.dataframe(copper_table, use_container_width=True, hide_index=True)
 
         # 2. 电缆费用公式
-        with st.expander("🔌 2. 电缆费用公式（J列）", expanded=False):
+        with st.expander("🔌 2. 电缆费用公式", expanded=False):
             st.markdown("#### 塑壳断路器")
-            st.code("电缆费 = 电缆宽度(mm) × 数量 × ((柜宽/105 - 1)/2 + 1)", language="text")
-            st.markdown("""
-            > **说明：** 缓冲系数 `((柜宽/105 - 1)/2 + 1)` 用于平衡铜价波动，铜价上涨时报价只涨涨幅的一半。
-            """)
+            st.code("""电缆费 = 截面积(mm²) × 数量 × (极数×0.7)m × 铜价 × 8.9 / 1000
+
+1P/2P → 0.7m, 3P → 2.1m, 4P → 2.8m""", language="text")
+            st.markdown("> **说明：** 按标准电缆截面积计算，每P 0.7m。160A及以下用电缆，250A及以上用铜排。")
             cable_params = load_breaker_cable_params()
             cable_table = pd.DataFrame([
-                {'电流(A)': k, '电缆宽度(mm)': v} for k, v in sorted(cable_params.items()) if v > 0
+                {'电流(A)': k, '截面积(mm²)': v} for k, v in sorted(cable_params.items()) if v > 0 and k <= 160
             ])
             st.dataframe(cable_table, use_container_width=True, hide_index=True)
 
@@ -1058,12 +1058,12 @@ def main():
             st.markdown("#### 数显仪表铜排费用")
             st.code("""有仪表时: 仪表铜排费 = 柜宽 × 截面积(cm²) × 铜价 × 8.9 × 4.8
 
-截面积 = 根据降容后总电流(I50)查铜排选型表
+截面积 = 根据降容后总电流查铜排选型表
 4.8 = ABCN四相(每相1m) + PE排(0.8m)""", language="text")
             st.markdown("> 仅当柜内包含数显仪表时计算此费用，归入铜排成本。")
 
         # 3. 铜排成本公式
-        with st.expander("🟫 3. 铜排成本公式（H51）", expanded=False):
+        with st.expander("🟫 3. 铜排成本公式", expanded=False):
             st.code("""铜排总价 = ROUND(
   7 × 铜排截面积(cm²) × 铜价 × 8.9        // 三相主母线（7米）
   + 2 × (截面积/2) × 铜价 × 8.9            // 零线N（截面积为主母线一半）
@@ -1360,7 +1360,7 @@ def run_project_report(cabinet_list: list, copper_price: float):
         st.warning("没有包含元器件的柜子")
         return
 
-    # ─── 每台柜子明细（匹配Excel格式） ───
+    # ─── 每台柜子明细 ───
     st.subheader("🗄️ 各柜明细")
 
     project_total_cost = 0
