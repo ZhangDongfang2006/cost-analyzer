@@ -138,6 +138,7 @@ def lookup_price_sqlite(model):
                 'unit_price': float(d['unit_price'] or 0),
                 'retail_price': float(d['retail_price'] or 0),
                 'brand': d['brand'],
+                'type': d.get('type', ''),
             }
         # 2. 模糊匹配：去掉空格后匹配
         model_nospace = model.replace(' ', '').upper()
@@ -149,6 +150,7 @@ def lookup_price_sqlite(model):
                 'unit_price': float(d['unit_price'] or 0),
                 'retail_price': float(d['retail_price'] or 0),
                 'brand': d['brand'],
+                'type': d.get('type', ''),
             }
     return None
 
@@ -164,6 +166,7 @@ def lookup_price_by_name_sqlite(name):
                 'unit_price': float(d['unit_price'] or 0),
                 'retail_price': float(d['retail_price'] or 0),
                 'brand': d['brand'],
+                'type': d.get('type', ''),
             }
         # 2. 模糊匹配（名称或型号）
         rows = conn.execute("SELECT * FROM products WHERE name LIKE ? OR model LIKE ?", (f"%{name}%", f"%{name}%")).fetchall()
@@ -174,6 +177,7 @@ def lookup_price_by_name_sqlite(name):
                 'unit_price': float(d['unit_price'] or 0),
                 'retail_price': float(d['retail_price'] or 0),
                 'brand': d['brand'],
+                'type': d.get('type', ''),
             }
     return None
 
