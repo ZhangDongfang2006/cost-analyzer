@@ -375,8 +375,8 @@ def calc_single_cabinet(cabinet: dict, copper_price: float) -> dict:
         amount = rounded_price * comp['qty']
         total_comp_cost += amount
 
-        if comp['current'] >= 250:
-            # ≥250A: 铜排出线，费用归入铜排
+        if comp['current'] >= 250 and '断路器' in comp.get('type', ''):
+            # ≥250A断路器: 铜排出线，费用归入铜排
             spec = get_copper_spec_by_current(comp['current'])
             cost = 2.5 * comp['qty'] * spec['area_cm2'] * copper_price * 8.9 * 3
             high_current_copper_cost += cost
