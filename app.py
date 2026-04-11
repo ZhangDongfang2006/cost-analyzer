@@ -789,7 +789,8 @@ def main():
                     st.dataframe(price_df.head(20), use_container_width=True, hide_index=True)
 
             # 批量导入
-            with st.expander("📦 批量导入", expanded=False):
+            with st.expander(f"📦 批量导入 → {cab['name']}", expanded=False):
+                st.caption(f"导入到柜子: **{cab['name']}** ({cab['type']}, {cab['width']}m)")
                 import_mode = st.radio("导入方式", ["📄 Excel文件", "📝 文本粘贴"], horizontal=True)
 
                 preview_data = []
@@ -895,8 +896,8 @@ def main():
                             st.error(f"读取文件失败: {e}")
 
                 else:  # 文本粘贴
-                    text = st.text_area("每行一个元器件（Tab/空格分隔）", height=150,
-                                        placeholder="名称\t型号\t数量\n型号\t数量", key="batch_text")
+                    text = st.text_area("粘贴元器件清单（每行一个：型号 数量）", height=150,
+                                        placeholder="XT1N160 TMD 100 3P FF 1\nMC7200 6", key="batch_text")
                     if text.strip():
                         for line in text.strip().split('\n'):
                             # 从行末尾提取数量（支持空格/Tab分隔）
