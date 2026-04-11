@@ -340,15 +340,26 @@ def get_pe_area(area_mm2: float) -> float:
         return S / 4
 
 def calc_copper_busbar_cost(extra_copper_cost: float, total_current: float,
-                            copper_price: float) -> dict:
-    """铜排成本 = 三相母线 + 零线 + 地线 + 额外铜排费用(≥250A出线)"""
+                            copper_price: float, incoming: str = '下进线',
+                            width: float = 0.8) -> dict:
+    """铜排成本 = 三相母线 + 零线 + 地线 + 额外铜排费用(≥250A出线)
+    
+    进线方式: 下进线(默认)/上进线/侧进线
+    侧进线时额外增加约一台柜宽的主母排量
+    """
     spec = get_copper_spec_by_current(total_current)
     L = spec['area_cm2']  # 相线截面积cm²
     S_mm2 = spec['area_mm2']  # 相线截面积mm²
     pe_area_cm2 = get_pe_area(S_mm2) / 100  # PE截面积cm²
     K = copper_price
     density = 8.9
-    phase_cost = 7 * L * K * density
+    
+    # 侧进线: 三相各增加一台柜宽
+    incoming_extra = 0
+    if incoming == '侧进线':
+        incoming_extra = 3 * width * L * K * density  # 三相各加柜宽
+    
+    phase_cost = 7 * L * K * density + incoming_extra
     neutral_cost = 2 * (L / 2) * K * density
     ground_cost = 2 * pe_area_cm2 * K * density
     copper_cost = round(phase_cost + neutral_cost + ground_cost + extra_copper_cost, 0)
@@ -362,6 +373,7 @@ def calc_copper_busbar_cost(extra_copper_cost: float, total_current: float,
         'copper_area_cm2': L,
         'pe_area_cm2': pe_area_cm2,
         'total_current': round(total_current, 1),
+        'incoming_extra': round(incoming_extra, 2),
     }
 
 def calc_profit(amount: float) -> float:
@@ -434,10 +446,21 @@ def calc_single_cabinet(cabinet: dict, copper_price: float) -> dict:
     # 仪表不单独计算铜排（铜排不接入数显仪表）
     meter_copper_cost = 0
     meter_copper_cost = 0
+    
+    # 刀熔开关: 断路器上方带刀熔开关时，每相增加0.4m铜排
+    fuse_switch_extra = 0
+    has_fuse_switch = any('刀熔' in c.get('type', '') or '刀熔' in c.get('name', '') 
+                         for c in components)
+    if has_fuse_switch:
+        spec_for_fuse = get_copper_spec_by_current(reduced_current)
+        fuse_switch_extra = 3 * 0.4 * spec_for_fuse['area_cm2'] * copper_price * 8.9
 
-    copper_detail = calc_copper_busbar_cost(high_current_copper_cost, reduced_current, copper_price)
+    copper_detail = calc_copper_busbar_cost(high_current_copper_cost + fuse_switch_extra, reduced_current, copper_price,
+                                                  incoming=cabinet.get('incoming', '下进线'),
+                                                  width=width)
     copper_detail['high_current_copper_cost'] = high_current_copper_cost
     copper_detail['meter_copper_cost'] = 0
+    copper_detail['fuse_switch_extra'] = fuse_switch_extra
 
     # 3. 辅助材料：从价格库查找
     # 辅助材料：用模糊匹配查找（匹配包含"N路"或"N路出线"的辅助材料记录）
@@ -571,7 +594,7 @@ def main():
 
         # 添加柜子
         with st.expander("➕ 添加柜子", expanded=not st.session_state.cabinet_list):
-            col_a, col_b, col_c = st.columns([2, 2, 1])
+            col_a, col_b, col_c, col_d = st.columns([2, 2, 1, 2])
             with col_a:
                 new_name = st.text_input("柜号名称", placeholder="如: 1#出线柜", key="new_cab_name")
             with col_b:
@@ -579,6 +602,9 @@ def main():
             with col_c:
                 new_width = st.number_input("柜宽(米)", value=0.8, min_value=0.1, max_value=2.0,
                                             step=0.1, key="new_cab_width")
+            with col_d:
+                new_incoming = st.selectbox("进线方式", ["上进线", "侧进线", "下进线"],
+                                            index=2, key="new_cab_incoming")  # 默认下进线
 
             if st.button("✅ 添加柜子", type="primary", use_container_width=True):
                 if new_name:
@@ -586,6 +612,7 @@ def main():
                         'name': new_name,
                         'type': new_type,
                         'width': new_width,
+                        'incoming': new_incoming,
                         'components': [],
                     })
                     st.session_state.active_cabinet_idx = len(st.session_state.cabinet_list) - 1
@@ -1103,15 +1130,20 @@ def main():
         with st.expander("🟫 3. 铜排成本公式", expanded=False):
             st.code("""铜排费(元) = ROUND(
   三相母线: 7(m) × 截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³)
+  + 侧进线增加: 3 × 柜宽(m) × 截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³)  // 仅侧进线
   零线N:   2(m) × (截面积/2)(cm²) × 铜价(元/kg) × 8.9(g/cm³)
-  地线PE:  2(m) × PE截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³)  // PE按国标分段计算
+  地线PE:  2(m) × PE截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³)  // PE按国标分段
   + ≥250A出线铜排费(元)
+  + 刀熔开关增加: 3 × 0.4(m) × 截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³)  // 有刀熔开关时
 , 0)""", language="text")
             st.markdown("""
             - **7** = 水平母线总长度(m)，经验估算值
             - **2** = 零线/地线长度(m)
             - **8.9** = 铜密度(g/cm³)，物理常数
             - 铜排截面积根据降容后总电流(A)从载流量对照表选取
+            - **进线方式**: 下进线(默认)不增加; 侧进线三相各加一台柜宽
+            - **刀熔开关**: 有刀熔开关时每相增加0.4m
+            - **PE截面积国标**: S≤16→S, 16<S≤35→16, 35<S≤400→S/2, 400<S≤800→200, S>800→S/4
             """)
 
         # 4. 分散系数
