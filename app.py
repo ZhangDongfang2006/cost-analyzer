@@ -899,20 +899,30 @@ def main():
                                         placeholder="名称\t型号\t数量\n型号\t数量", key="batch_text")
                     if text.strip():
                         for line in text.strip().split('\n'):
-                            parts = re.split(r'[\t]+|[ \t]{2,}', line.strip())
-                            parts = [p.strip() for p in parts if p.strip()]
-                            if not parts:
+                            # 从行末尾提取数量（支持空格/Tab分隔）
+                            line = line.strip()
+                            if not line:
                                 continue
-                            if len(parts) >= 3:
-                                name, model, qty_str = parts[0], parts[1], parts[2]
-                            elif len(parts) == 2:
-                                name, model, qty_str = '', parts[0], parts[1]
+                            # 尝试从末尾提取数字作为数量
+                            qty_match = re.search(r'[\t ]+(\d+)\s*$', line)
+                            if qty_match:
+                                qty = int(qty_match.group(1))
+                                model = line[:qty_match.start()].strip()
+                                name = ''
                             else:
-                                continue
-                            try:
-                                qty = int(float(qty_str))
-                            except (ValueError, TypeError):
-                                continue
+                                # 尝试Tab/多空格分隔
+                                parts = re.split(r'[\t]+|[ \t]{2,}', line)
+                                parts = [p.strip() for p in parts if p.strip()]
+                                if len(parts) >= 3:
+                                    name, model, qty_str = parts[0], parts[1], parts[2]
+                                elif len(parts) == 2:
+                                    name, model, qty_str = '', parts[0], parts[1]
+                                else:
+                                    continue
+                                try:
+                                    qty = int(float(qty_str))
+                                except (ValueError, TypeError):
+                                    continue
                             match = lookup_price(model)
                             preview_data.append({
                                 'name': name or (match['name'] if match else ''),
