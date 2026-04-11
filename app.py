@@ -232,6 +232,15 @@ else:
     init_db()
 
 COPPER_SPECS = [
+    {'spec': '15×2',  'width': 15, 'thickness': 2,  'area_mm2': 30,  'area_cm2': 0.03, 'current': 125},
+    {'spec': '15×3',  'width': 15, 'thickness': 3,  'area_mm2': 45,  'area_cm2': 0.045, 'current': 185},
+    {'spec': '20×3',  'width': 20, 'thickness': 3,  'area_mm2': 60,  'area_cm2': 0.06, 'current': 245},
+    {'spec': '20×4',  'width': 20, 'thickness': 4,  'area_mm2': 80,  'area_cm2': 0.08, 'current': 320},
+    {'spec': '25×3',  'width': 25, 'thickness': 3,  'area_mm2': 75,  'area_cm2': 0.075, 'current': 305},
+    {'spec': '25×4',  'width': 25, 'thickness': 4,  'area_mm2': 100, 'area_cm2': 0.10, 'current': 370},
+    {'spec': '30×3',  'width': 30, 'thickness': 3,  'area_mm2': 90,  'area_cm2': 0.09, 'current': 355},
+    {'spec': '30×4',  'width': 30, 'thickness': 4,  'area_mm2': 120, 'area_cm2': 0.12, 'current': 420},
+    {'spec': '40×4',  'width': 40, 'thickness': 4,  'area_mm2': 160, 'area_cm2': 0.16, 'current': 560},
     {'spec': '40×5',  'width': 40, 'thickness': 5,  'area_mm2': 200, 'area_cm2': 0.20, 'current': 615},
     {'spec': '50×5',  'width': 50, 'thickness': 5,  'area_mm2': 250, 'area_cm2': 0.25, 'current': 755},
     {'spec': '60×6',  'width': 60, 'thickness': 6,  'area_mm2': 360, 'area_cm2': 0.36, 'current': 990},
