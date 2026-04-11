@@ -937,12 +937,18 @@ def main():
                     st.subheader(f"📋 预览导入 ({len(preview_data)} 个元器件)")
                     pdf = []
                     for i, item in enumerate(preview_data):
+                        _current = extract_current_from_model(item['model'])
+                        _match = lookup_price(item['model'])
+                        _type = _match.get('type', '') if _match else ''
+                        _name = item['name'] or (_match['name'] if _match else '未知')
                         pdf.append({
                             '序号': i + 1,
-                            '名称': item['name'],
+                            '名称': _name,
                             '型号': item['model'],
+                            '电流(A)': _current,
+                            '类型': _type or '⚠️未识别',
                             '数量': item['qty'],
-                                    '匹配单价': f"¥{item['unit_price']:.0f}" if item['matched'] else '-',
+                            '匹配单价': f"¥{item['unit_price']:.0f}" if item['matched'] else '-',
                             '状态': '✅已匹配' if item['matched'] else '⚠️未找到',
                         })
                     st.dataframe(pd.DataFrame(pdf), use_container_width=True, hide_index=True)
@@ -951,12 +957,16 @@ def main():
                         for item in preview_data:
                             current = extract_current_from_model(item['model'])
                             match = lookup_price(item['model'])
+                            # 从价格库获取类型，未匹配则置空
+                            comp_type = ''
+                            if match and match.get('type'):
+                                comp_type = match['type']
                             component = {
                                 'model': item['model'],
-                                'name': item['name'] or '未知',
+                                'name': item['name'] or (match['name'] if match else '未知'),
                                 'qty': item['qty'],
                                 'current': current,
-                                'type': '其他',
+                                'type': comp_type,
                                 'unit_price': item['unit_price'],
                                 'retail_price': match['retail_price'] if match else 0,
                                 'brand': match['brand'] if match else '未找到',
