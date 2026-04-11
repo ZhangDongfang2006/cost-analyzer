@@ -414,16 +414,13 @@ def calc_single_cabinet(cabinet: dict, copper_price: float) -> dict:
 
     reduced_current = total_current * derate
 
-    # 数显仪表铜排：ABCN四相(每相1m) + PE(0.8m)，截面积按降容后总电流查表
+    # 仪表不单独计算铜排（铜排不接入数显仪表）
     meter_copper_cost = 0
-    has_meter = meter_count > 0
-    if has_meter:
-        meter_area = get_copper_area_by_current(reduced_current)  # cm²
-        meter_copper_cost = width * meter_area * copper_price * 8.9 * 4.8  # 4(ABCN) + 0.8(PE)
+    meter_copper_cost = 0
 
-    copper_detail = calc_copper_busbar_cost(high_current_copper_cost + meter_copper_cost, reduced_current, copper_price)
+    copper_detail = calc_copper_busbar_cost(high_current_copper_cost, reduced_current, copper_price)
     copper_detail['high_current_copper_cost'] = high_current_copper_cost
-    copper_detail['meter_copper_cost'] = meter_copper_cost
+    copper_detail['meter_copper_cost'] = 0
 
     # 3. 辅助材料：从价格库查找
     # 辅助材料：用模糊匹配查找（匹配包含"N路"或"N路出线"的辅助材料记录）
@@ -1085,13 +1082,6 @@ def main():
             st.markdown("- 250A及以上（塑壳/框架）均用铜排出线，出线长度2.5m")
             st.markdown("- 费用归入铜排成本")
 
-            st.markdown("#### 数显仪表铜排")
-            st.code("""仪表铜排费(元) = 柜宽(m) × 铜排截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³) × 4.8
-
-截面积 = 根据降容后总电流(A)查铜排选型表
-4.8 = ABCN四相(每相1m) + PE排(0.8m)""", language="text")
-            st.markdown("- 仅当柜内包含数显仪表时计算，归入铜排成本")
-
         # 3. 铜排成本公式
         with st.expander("🟫 3. 铜排成本公式", expanded=False):
             st.code("""铜排费(元) = ROUND(
@@ -1099,7 +1089,6 @@ def main():
   零线N:   2(m) × (截面积/2)(cm²) × 铜价(元/kg) × 8.9(g/cm³)
   地线PE:  2(m) × (截面积/4)(cm²) × 铜价(元/kg) × 8.9(g/cm³)
   + ≥250A出线铜排费(元)
-  + 仪表铜排费(元)
 , 0)""", language="text")
             st.markdown("""
             - **7** = 水平母线总长度(m)，经验估算值
@@ -1518,7 +1507,7 @@ def run_project_report(cabinet_list: list, copper_price: float):
                 - 降容后电流: {result['reduced_current']:,.0f}A
                 - 铜排规格: {copper_spec_str}
                 - 铜排截面积: {cd['copper_area_cm2']} cm²
-                - 铜排费用合计: ¥{cd['total_cost']:,.0f}（含主母线+≥250A出线+仪表铜排）
+                - 铜排费用合计: ¥{cd['total_cost']:,.0f}（含主母线+≥250A出线）
                 - 电缆费用(≤160A): ¥{result['cable_cost']:,.0f}
                 """)
 
@@ -1563,12 +1552,8 @@ def run_project_report(cabinet_list: list, copper_price: float):
                         st.code(f"{_s['spec']}  {c['model']}  {c['current']}A × {c['qty']}: 2.5m × {_s['area_cm2']}cm² × {copper_price} × 8.9 × 3 = {_cost:,.2f}元")
                 st.code(f"出线小计: {cd['high_current_copper_cost']:,.2f}元")
 
-                # 仪表铜排
-                st.markdown("#### ⑥ 仪表铜排")
-                st.code(f"""柜宽 {cab['width']}m × {cd['copper_area_cm2']}cm² × {copper_price} × 8.9 × 4.8 = {cd['meter_copper_cost']:,.2f}元""")
-
                 # 电缆
-                st.markdown("#### ⑦ 电缆(≤160A)")
+                st.markdown("#### ⑥ 电缆(≤160A)")
                 for c in components:
                     if '断路器' in c.get('type', '') and c['current'] < 250 and c['current'] > 0:
                         from app import get_breaker_poles as _gpoles, load_breaker_cable_params as _lcp
@@ -1583,7 +1568,7 @@ def run_project_report(cabinet_list: list, copper_price: float):
                 # 汇总
                 st.markdown("#### ⑧ 费用汇总")
                 st.code(f"""元器件: ¥{result['comp_cost']:,.0f}
-铜排:   ¥{cd['total_cost']:,.0f}（主母线{busbar_sub:,.0f} + 出线{cd['high_current_copper_cost']:,.0f} + 仪表{cd['meter_copper_cost']:,.0f}）
+铜排:   ¥{cd['total_cost']:,.0f}（主母线{busbar_sub:,.0f} + 出线{cd['high_current_copper_cost']:,.0f}）
 电缆:   ¥{result['cable_cost']:,.0f}
 辅材:   ¥{result['accessory_cost']:,.0f}
 箱体:   ¥{result['cabinet_cost']:,.0f}
