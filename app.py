@@ -1332,6 +1332,14 @@ def save_calc_log(copper_price, cabinets, results):
         for log in logs:
             f.write(json.dumps(log, ensure_ascii=False) + '\n')
 
+    # 写入通知文件，触发CostCalc机器人验证计算结果
+    notify_file = Path(__file__).parent / "data" / ".calc_notify"
+    notify_file.write_text(json.dumps({
+        "timestamp": entry["timestamp"],
+        "copper_price": copper_price,
+        "cabinets": [{"name": c["name"], "result": r} for c, r in zip(cabinets, results)]
+    }, ensure_ascii=False))
+
 
 def run_project_report(cabinet_list: list, copper_price: float):
     """生成项目成本分析报告"""
@@ -1486,6 +1494,75 @@ def run_project_report(cabinet_list: list, copper_price: float):
                 - 铜排费用合计: ¥{cd['total_cost']:,.0f}（含主母线+≥250A出线+仪表铜排）
                 - 电缆费用(≤160A): ¥{result['cable_cost']:,.0f}
                 """)
+
+            # 详细计算过程（折叠）
+            with st.expander("📝 详细计算过程", expanded=False):
+                st.markdown(f"**铜价:** {copper_price*1000:,.0f}元/吨 = {copper_price}元/kg")
+                st.markdown(f"**柜宽:** {cabinet['width']}m")
+
+                # 总电流
+                st.markdown("#### ① 总电流")
+                for c in components:
+                    if '断路器' in c.get('type', ''):
+                        st.code(f"{c['model']}  {c['current']}A × {c['qty']} = {c['current']*c['qty']}A")
+                    else:
+                        st.code(f"{c['model']}  ({c['type']}) → 不计入")
+                st.code(f"总电流 = {result['total_current']}A")
+
+                # 分散系数
+                st.markdown("#### ② 分散系数")
+                st.code(f"出线路数 = {result['outgoing_circuits']}路(断路器) → 分散系数 = {result['derate']}")
+                st.code(f"降容后电流 = {result['total_current']}A × {result['derate']} = {result['reduced_current']}A")
+
+                # 铜排选型
+                st.markdown("#### ③ 铜排选型")
+                st.code(f"降容后 {result['reduced_current']}A → {copper_spec_str}  截面积 {cd['copper_area_cm2']}cm²")
+
+                # 主母线
+                st.markdown("#### ④ 主母线")
+                busbar_sub = cd['phase_cost'] + cd['neutral_cost'] + cd['ground_cost']
+                st.code(f"""三相ABC: 7m × {cd['copper_area_cm2']}cm² × {copper_price} × 8.9 = {cd['phase_cost']:,.2f}元
+零线N:   2m × {cd['copper_area_cm2']/2}cm² × {copper_price} × 8.9 = {cd['neutral_cost']:,.2f}元
+地线PE:  2m × {cd['copper_area_cm2']/4}cm² × {copper_price} × 8.9 = {cd['ground_cost']:,.2f}元
+主母线小计: {busbar_sub:,.2f}元""")
+
+                # ≥250A出线
+                st.markdown("#### ⑤ ≥250A铜排出线")
+                for c in components:
+                    if '断路器' in c.get('type', '') and c['current'] >= 250:
+                        from app import get_copper_spec_by_current as _gspec
+                        _s = _gspec(c['current'])
+                        _cost = 2.5 * c['qty'] * _s['area_cm2'] * copper_price * 8.9 * 3
+                        st.code(f"{_s['spec']}  {c['model']}  {c['current']}A × {c['qty']}: 2.5m × {_s['area_cm2']}cm² × {copper_price} × 8.9 × 3 = {_cost:,.2f}元")
+                st.code(f"出线小计: {cd['high_current_copper_cost']:,.2f}元")
+
+                # 仪表铜排
+                st.markdown("#### ⑥ 仪表铜排")
+                st.code(f"""柜宽 {cabinet['width']}m × {cd['copper_area_cm2']}cm² × {copper_price} × 8.9 × 4.8 = {cd['meter_copper_cost']:,.2f}元""")
+
+                # 电缆
+                st.markdown("#### ⑦ 电缆(≤160A)")
+                for c in components:
+                    if '断路器' in c.get('type', '') and c['current'] < 250 and c['current'] > 0:
+                        from app import get_breaker_poles as _gpoles, load_breaker_cable_params as _lcp
+                        _cp = _lcp()
+                        _area = _cp.get(c['current'], 0)
+                        if _area > 0:
+                            _poles = _gpoles(c.get('model', ''))
+                            _cl = _area * c['qty'] * (_poles * 0.7) * copper_price * 8.9 / 1000
+                            st.code(f"{c['model']}  {c['current']}A × {c['qty']}: {_area}mm² × {c['qty']} × {_poles*0.7}m × {copper_price} × 8.9 / 1000 = {_cl:,.2f}元")
+                st.code(f"电缆小计: {result['cable_cost']:,.2f}元")
+
+                # 汇总
+                st.markdown("#### ⑧ 费用汇总")
+                st.code(f"""元器件: ¥{result['comp_cost']:,.0f}
+铜排:   ¥{cd['total_cost']:,.0f}（主母线{busbar_sub:,.0f} + 出线{cd['high_current_copper_cost']:,.0f} + 仪表{cd['meter_copper_cost']:,.0f}）
+电缆:   ¥{result['cable_cost']:,.0f}
+辅材:   ¥{result['accessory_cost']:,.0f}
+箱体:   ¥{result['cabinet_cost']:,.0f}
+总成本: ¥{result['total_cost']:,.0f}
+成套费: ¥{result['total_profit']:,.0f}
+含税价: ¥{result['grand_total']:,.0f}""")
 
             project_total_cost += result['total_cost']
             project_total_profit += result['total_profit']
