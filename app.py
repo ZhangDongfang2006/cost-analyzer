@@ -1403,6 +1403,8 @@ def run_project_report(cabinet_list: list, copper_price: float):
             table_data = []
             idx = 1
             for comp in components:
+                if comp['qty'] == 0:  # 报告中隐藏数量为0的
+                    continue
                 amount = round(comp['unit_price'], 0) * comp['qty']
                 table_data.append({
                     '序号': idx,
@@ -1671,6 +1673,8 @@ def generate_project_csv(cabinet_list, cabinet_results, total_cost, total_profit
         lines.append(f"=== {result['name']} ({result['type']}, {result['width']}m) ===")
         lines.append("序号,名称,型号,数量,单价(元),金额(元),品牌")
         for i, c in enumerate(cab['components']):
+            if c['qty'] == 0:  # 导出时隐藏数量为0的
+                continue
             amount = round(c['unit_price'], 0) * c['qty']
             lines.append(f"{i+1},{c['name']},{c['model']},{c['qty']},{round(c['unit_price'],0)},{amount},{c['brand']}")
         idx = len(cab['components']) + 1
