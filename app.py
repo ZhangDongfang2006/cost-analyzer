@@ -455,12 +455,20 @@ def calc_single_cabinet(cabinet: dict, copper_price: float) -> dict:
         spec_for_fuse = get_copper_spec_by_current(reduced_current)
         fuse_switch_extra = 3 * 0.4 * spec_for_fuse['area_cm2'] * copper_price * 8.9
 
-    copper_detail = calc_copper_busbar_cost(high_current_copper_cost + fuse_switch_extra, reduced_current, copper_price,
+    # 带计量: 有电度表时，计量室比普通仪表室高0.2m，每相增加0.4m铜排
+    meter_extra = 0
+    has_meter_room = any('电度表' in c.get('name', '') for c in components)
+    if has_meter_room:
+        spec_for_meter = get_copper_spec_by_current(reduced_current)
+        meter_extra = 3 * 0.4 * spec_for_meter['area_cm2'] * copper_price * 8.9
+
+    copper_detail = calc_copper_busbar_cost(high_current_copper_cost + fuse_switch_extra + meter_extra, reduced_current, copper_price,
                                                   incoming=cabinet.get('incoming', '下进线'),
                                                   width=width)
     copper_detail['high_current_copper_cost'] = high_current_copper_cost
     copper_detail['meter_copper_cost'] = 0
     copper_detail['fuse_switch_extra'] = fuse_switch_extra
+    copper_detail['meter_extra'] = meter_extra
 
     # 3. 辅助材料：从价格库查找
     # 辅助材料：用模糊匹配查找（匹配包含"N路"或"N路出线"的辅助材料记录）
@@ -1135,6 +1143,7 @@ def main():
   地线PE:  2(m) × PE截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³)  // PE按国标分段
   + ≥250A出线铜排费(元)
   + 刀熔开关增加: 3 × 0.4(m) × 截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³)  // 有刀熔开关时
+  + 带计量增加: 3 × 0.4(m) × 截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³)  // 有电度表时
 , 0)""", language="text")
             st.markdown("""
             - **7** = 水平母线总长度(m)，经验估算值
@@ -1143,6 +1152,7 @@ def main():
             - 铜排截面积根据降容后总电流(A)从载流量对照表选取
             - **进线方式**: 下进线(默认)不增加; 侧进线三相各加一台柜宽
             - **刀熔开关**: 有刀熔开关时每相增加0.4m
+            - **带计量**: 有电度表时每相增加0.4m（计量室比仪表室高0.2m）
             - **PE截面积国标**: S≤16→S, 16<S≤35→16, 35<S≤400→S/2, 400<S≤800→200, S>800→S/4
             """)
 
