@@ -325,25 +325,42 @@ def get_copper_area_by_current(total_current: float) -> float:
     spec = get_copper_spec_by_current(total_current)
     return spec['area_cm2']
 
+def get_pe_area(area_mm2: float) -> float:
+    """根据GB标准计算PE保护导体最小截面积(mm²)"""
+    S = area_mm2
+    if S <= 16:
+        return S
+    elif S <= 35:
+        return 16
+    elif S <= 400:
+        return S / 2
+    elif S <= 800:
+        return 200
+    else:
+        return S / 4
+
 def calc_copper_busbar_cost(extra_copper_cost: float, total_current: float,
                             copper_price: float) -> dict:
     """铜排成本 = 三相母线 + 零线 + 地线 + 额外铜排费用(≥250A出线)"""
-    L = get_copper_area_by_current(total_current)  # area_cm2
+    spec = get_copper_spec_by_current(total_current)
+    L = spec['area_cm2']  # 相线截面积cm²
+    S_mm2 = spec['area_mm2']  # 相线截面积mm²
+    pe_area_cm2 = get_pe_area(S_mm2) / 100  # PE截面积cm²
     K = copper_price
     density = 8.9
     phase_cost = 7 * L * K * density
     neutral_cost = 2 * (L / 2) * K * density
-    ground_cost = 2 * (L / 4) * K * density
+    ground_cost = 2 * pe_area_cm2 * K * density
     copper_cost = round(phase_cost + neutral_cost + ground_cost + extra_copper_cost, 0)
-    copper_spec = get_copper_spec_by_current(total_current)
     return {
         'total_cost': copper_cost,
         'phase_cost': round(phase_cost, 2),
         'neutral_cost': round(neutral_cost, 2),
         'ground_cost': round(ground_cost, 2),
         'extra_copper_cost': round(extra_copper_cost, 2),
-        'copper_spec': copper_spec,
+        'copper_spec': spec,
         'copper_area_cm2': L,
+        'pe_area_cm2': pe_area_cm2,
         'total_current': round(total_current, 1),
     }
 
@@ -1087,7 +1104,7 @@ def main():
             st.code("""铜排费(元) = ROUND(
   三相母线: 7(m) × 截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³)
   零线N:   2(m) × (截面积/2)(cm²) × 铜价(元/kg) × 8.9(g/cm³)
-  地线PE:  2(m) × (截面积/4)(cm²) × 铜价(元/kg) × 8.9(g/cm³)
+  地线PE:  2(m) × PE截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³)  // PE按国标分段计算
   + ≥250A出线铜排费(元)
 , 0)""", language="text")
             st.markdown("""
@@ -1539,7 +1556,7 @@ def run_project_report(cabinet_list: list, copper_price: float):
                 busbar_sub = cd['phase_cost'] + cd['neutral_cost'] + cd['ground_cost']
                 st.code(f"""三相ABC: 7m × {cd['copper_area_cm2']}cm² × {copper_price} × 8.9 = {cd['phase_cost']:,.2f}元
 零线N:   2m × {cd['copper_area_cm2']/2}cm² × {copper_price} × 8.9 = {cd['neutral_cost']:,.2f}元
-地线PE:  2m × {cd['copper_area_cm2']/4}cm² × {copper_price} × 8.9 = {cd['ground_cost']:,.2f}元
+地线PE:  2m × {cd['pe_area_cm2']}cm² × {copper_price} × 8.9 = {cd['ground_cost']:,.2f}元  (PE按国标)
 主母线小计: {busbar_sub:,.2f}元""")
 
                 # ≥250A出线
