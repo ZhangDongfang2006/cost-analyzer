@@ -1498,7 +1498,7 @@ def run_project_report(cabinet_list: list, copper_price: float):
             # 详细计算过程（折叠）
             with st.expander("📝 详细计算过程", expanded=False):
                 st.markdown(f"**铜价:** {copper_price*1000:,.0f}元/吨 = {copper_price}元/kg")
-                st.markdown(f"**柜宽:** {cabinet['width']}m")
+                st.markdown(f"**柜宽:** {cab['width']}m")
 
                 # 总电流
                 st.markdown("#### ① 总电流")
@@ -1538,7 +1538,7 @@ def run_project_report(cabinet_list: list, copper_price: float):
 
                 # 仪表铜排
                 st.markdown("#### ⑥ 仪表铜排")
-                st.code(f"""柜宽 {cabinet['width']}m × {cd['copper_area_cm2']}cm² × {copper_price} × 8.9 × 4.8 = {cd['meter_copper_cost']:,.2f}元""")
+                st.code(f"""柜宽 {cab['width']}m × {cd['copper_area_cm2']}cm² × {copper_price} × 8.9 × 4.8 = {cd['meter_copper_cost']:,.2f}元""")
 
                 # 电缆
                 st.markdown("#### ⑦ 电缆(≤160A)")
