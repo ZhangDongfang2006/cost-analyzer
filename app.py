@@ -949,7 +949,7 @@ def main():
                             st.error(f"读取文件失败: {e}")
 
                 else:  # 文本粘贴
-                    text = st.text_area("粘贴元器件清单（每行一个：型号 数量）", height=150,
+                    text = st.text_area("粘贴元器件清单（每行一个：型号 数量）", height=68,
                                         placeholder="XT1N160 TMD 100 3P FF 1\nMC7200 6", key="batch_text")
                     if text.strip():
                         for line in text.strip().split('\n'):
