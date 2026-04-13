@@ -1379,6 +1379,7 @@ def save_calc_log(copper_price, cabinets, results):
     # (no longer used, remove)
     entry = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "port": os.environ.get('STREAMLIT_SERVER_PORT', '8502'),
         "copper_price": copper_price,
         "cabinets": []
     }
