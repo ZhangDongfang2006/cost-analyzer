@@ -1444,7 +1444,7 @@ def save_calc_log(copper_price, cabinets, results):
     notify_file.write_text(json.dumps({
         "timestamp": entry["timestamp"],
         "copper_price": copper_price,
-        "cabinets": [{"name": c["name"], "result": r} for c, r in zip(cabinets, results)]
+        "cabinets": [{"name": c["name"], "components": c.get("components",[]), "result": r} for c, r in zip(cabinets, results)]
     }, ensure_ascii=False))
 
 
