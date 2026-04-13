@@ -363,11 +363,11 @@ def calc_copper_busbar_cost(extra_copper_cost: float, total_current: float,
     # 侧进线: 三相各增加一台柜宽
     incoming_extra = 0
     if incoming == '侧进线':
-        incoming_extra = 3 * width * L * K * density  # 三相各加柜宽
+        incoming_extra = 3 * width * L * K * density / 10  # 三相各加柜宽
     
-    phase_cost = 7 * L * K * density + incoming_extra
-    neutral_cost = 2 * (L / 2) * K * density
-    ground_cost = 2 * pe_area_cm2 * K * density
+    phase_cost = 7 * L * K * density / 10 + incoming_extra
+    neutral_cost = 2 * (L / 2) * K * density / 10
+    ground_cost = 2 * pe_area_cm2 * K * density / 10
     copper_cost = round(phase_cost + neutral_cost + ground_cost + extra_copper_cost, 0)
     return {
         'total_cost': copper_cost,
@@ -417,7 +417,7 @@ def calc_single_cabinet(cabinet: dict, copper_price: float) -> dict:
         if comp['current'] >= 250 and '断路器' in comp.get('type', ''):
             # ≥250A断路器: 铜排出线，费用归入铜排
             spec = get_copper_spec_by_current(comp['current'])
-            cost = 2.5 * comp['qty'] * spec['area_cm2'] * copper_price * 8.9 * 3
+            cost = 2.5 * comp['qty'] * spec['area_cm2'] * copper_price * 8.9 * 3 / 10
             high_current_copper_cost += cost
         else:
             # ≤160A: 电缆
@@ -459,14 +459,14 @@ def calc_single_cabinet(cabinet: dict, copper_price: float) -> dict:
                          for c in components)
     if has_fuse_switch:
         spec_for_fuse = get_copper_spec_by_current(reduced_current)
-        fuse_switch_extra = 3 * 0.4 * spec_for_fuse['area_cm2'] * copper_price * 8.9
+        fuse_switch_extra = 3 * 0.4 * spec_for_fuse['area_cm2'] * copper_price * 8.9 / 10
 
     # 带计量: 有电度表时，计量室比普通仪表室高0.2m，每相增加0.4m铜排
     meter_extra = 0
     has_meter_room = any('电度表' in c.get('name', '') for c in components)
     if has_meter_room:
         spec_for_meter = get_copper_spec_by_current(reduced_current)
-        meter_extra = 3 * 0.4 * spec_for_meter['area_cm2'] * copper_price * 8.9
+        meter_extra = 3 * 0.4 * spec_for_meter['area_cm2'] * copper_price * 8.9 / 10
 
     copper_detail = calc_copper_busbar_cost(high_current_copper_cost + fuse_switch_extra + meter_extra, reduced_current, copper_price,
                                                   incoming=cabinet.get('incoming', '下进线'),
@@ -1136,20 +1136,20 @@ def main():
             st.dataframe(cable_table, use_container_width=True, hide_index=True)
 
             st.markdown("#### 断路器铜排出线（≥250A）")
-            st.code("""出线费(元) = 2.5(m) × 数量(个) × 铜排截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³) × 3(三相)""", language="text")
+            st.code("""出线费(元) = 2.5(m) × 数量(个) × 铜排截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³) × 3(三相) / 10""", language="text")
             st.markdown("- 250A及以上（塑壳/框架）均用铜排出线，出线长度2.5m")
             st.markdown("- 费用归入铜排成本")
 
         # 3. 铜排成本公式
         with st.expander("🟫 3. 铜排成本公式", expanded=False):
             st.code("""铜排费(元) = ROUND(
-  三相母线: 7(m) × 截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³)
-  + 侧进线增加: 3 × 柜宽(m) × 截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³)  // 仅侧进线
-  零线N:   2(m) × (截面积/2)(cm²) × 铜价(元/kg) × 8.9(g/cm³)
-  地线PE:  2(m) × PE截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³)  // PE按国标分段
+  三相母线: 7(m) × 截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³) / 10
+  + 侧进线增加: 3 × 柜宽(m) × 截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³) / 10  // 仅侧进线
+  零线N:   2(m) × (截面积/2)(cm²) × 铜价(元/kg) × 8.9(g/cm³) / 10
+  地线PE:  2(m) × PE截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³) / 10  // PE按国标分段
   + ≥250A出线铜排费(元)
-  + 刀熔开关增加: 3 × 0.4(m) × 截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³)  // 有刀熔开关时
-  + 带计量增加: 3 × 0.4(m) × 截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³)  // 有电度表时
+  + 刀熔开关增加: 3 × 0.4(m) × 截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³) / 10  // 有刀熔开关时
+  + 带计量增加: 3 × 0.4(m) × 截面积(cm²) × 铜价(元/kg) × 8.9(g/cm³) / 10  // 有电度表时
 , 0)""", language="text")
             st.markdown("""
             - **7** = 水平母线总长度(m)，经验估算值
@@ -1630,9 +1630,9 @@ def run_project_report(cabinet_list: list, copper_price: float):
                 # 主母线
                 st.markdown("#### ④ 主母线")
                 busbar_sub = cd['phase_cost'] + cd['neutral_cost'] + cd['ground_cost']
-                st.code(f"""三相ABC: 7m × {cd['copper_area_cm2']}cm² × {copper_price} × 8.9 = {cd['phase_cost']:,.2f}元
-零线N:   2m × {cd['copper_area_cm2']/2}cm² × {copper_price} × 8.9 = {cd['neutral_cost']:,.2f}元
-地线PE:  2m × {cd['pe_area_cm2']}cm² × {copper_price} × 8.9 = {cd['ground_cost']:,.2f}元  (PE按国标)
+                st.code(f"""三相ABC: 7m × {cd['copper_area_cm2']}cm² × {copper_price} × 8.9 / 10 = {cd['phase_cost']:,.2f}元
+零线N:   2m × {cd['copper_area_cm2']/2}cm² × {copper_price} × 8.9 / 10 = {cd['neutral_cost']:,.2f}元
+地线PE:  2m × {cd['pe_area_cm2']}cm² × {copper_price} × 8.9 / 10 = {cd['ground_cost']:,.2f}元  (PE按国标)
 主母线小计: {busbar_sub:,.2f}元""")
 
                 # ≥250A出线
@@ -1641,8 +1641,8 @@ def run_project_report(cabinet_list: list, copper_price: float):
                     if '断路器' in c.get('type', '') and c['current'] >= 250:
                         from app import get_copper_spec_by_current as _gspec
                         _s = _gspec(c['current'])
-                        _cost = 2.5 * c['qty'] * _s['area_cm2'] * copper_price * 8.9 * 3
-                        st.code(f"{_s['spec']}  {c['model']}  {c['current']}A × {c['qty']}: 2.5m × {_s['area_cm2']}cm² × {copper_price} × 8.9 × 3 = {_cost:,.2f}元")
+                        _cost = 2.5 * c['qty'] * _s['area_cm2'] * copper_price * 8.9 * 3 / 10
+                        st.code(f"{_s['spec']}  {c['model']}  {c['current']}A × {c['qty']}: 2.5m × {_s['area_cm2']}cm² × {copper_price} × 8.9 × 3 / 10 = {_cost:,.2f}元")
                 st.code(f"出线小计: {cd['high_current_copper_cost']:,.2f}元")
 
                 # 电缆
