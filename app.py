@@ -16,8 +16,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime
 import openpyxl
+import requests
 
-# Telegram通知通过CostCalc机器人中转（心跳检测通知文件后发送）
+# Telegram通知配置
+TELEGRAM_BOT_TOKEN = "8626932429:AAE8Muk7WSPgqgJQlvyg5PcLPqaFoByyUHk"
+TELEGRAM_CHAT_ID = "7473762677"  # 张东方
+TELEGRAM_NOTIFY = True  # 设为False可关闭通知
 
 # ─── 配置 ───────────────────────────────────────────────
 st.set_page_config(
@@ -238,23 +242,23 @@ else:
     init_db()
 
 COPPER_SPECS = [
-    {'spec': '15×2',  'width': 15, 'thickness': 2,  'area_mm2': 30,  'area_cm2': 0.3, 'current': 125},
-    {'spec': '15×3',  'width': 15, 'thickness': 3,  'area_mm2': 45,  'area_cm2': 0.45, 'current': 185},
-    {'spec': '20×3',  'width': 20, 'thickness': 3,  'area_mm2': 60,  'area_cm2': 0.6, 'current': 245},
-    {'spec': '20×4',  'width': 20, 'thickness': 4,  'area_mm2': 80,  'area_cm2': 0.8, 'current': 320},
-    {'spec': '25×3',  'width': 25, 'thickness': 3,  'area_mm2': 75,  'area_cm2': 0.75, 'current': 305},
-    {'spec': '25×4',  'width': 25, 'thickness': 4,  'area_mm2': 100, 'area_cm2': 1.0, 'current': 370},
-    {'spec': '30×3',  'width': 30, 'thickness': 3,  'area_mm2': 90,  'area_cm2': 0.9, 'current': 355},
-    {'spec': '30×4',  'width': 30, 'thickness': 4,  'area_mm2': 120, 'area_cm2': 1.2, 'current': 420},
-    {'spec': '40×4',  'width': 40, 'thickness': 4,  'area_mm2': 160, 'area_cm2': 1.6, 'current': 560},
-    {'spec': '40×5',  'width': 40, 'thickness': 5,  'area_mm2': 200, 'area_cm2': 2.0, 'current': 615},
-    {'spec': '50×5',  'width': 50, 'thickness': 5,  'area_mm2': 250, 'area_cm2': 2.5, 'current': 755},
-    {'spec': '60×6',  'width': 60, 'thickness': 6,  'area_mm2': 360, 'area_cm2': 3.6, 'current': 990},
-    {'spec': '60×8',  'width': 60, 'thickness': 8,  'area_mm2': 480, 'area_cm2': 4.8, 'current': 1160},
-    {'spec': '80×8',  'width': 80, 'thickness': 8,  'area_mm2': 640, 'area_cm2': 6.4, 'current': 1490},
-    {'spec': '80×10', 'width': 80, 'thickness': 10, 'area_mm2': 800, 'area_cm2': 8.0, 'current': 1670},
-    {'spec': '100×10', 'width': 100, 'thickness': 10, 'area_mm2': 1000, 'area_cm2': 10.0, 'current': 2030},
-    {'spec': '120×10', 'width': 120, 'thickness': 10, 'area_mm2': 1200, 'area_cm2': 12.0, 'current': 2330},
+    {'spec': '15×2',  'width': 15, 'thickness': 2,  'area_mm2': 30,  'area_cm2': 0.03, 'current': 125},
+    {'spec': '15×3',  'width': 15, 'thickness': 3,  'area_mm2': 45,  'area_cm2': 0.045, 'current': 185},
+    {'spec': '20×3',  'width': 20, 'thickness': 3,  'area_mm2': 60,  'area_cm2': 0.06, 'current': 245},
+    {'spec': '20×4',  'width': 20, 'thickness': 4,  'area_mm2': 80,  'area_cm2': 0.08, 'current': 320},
+    {'spec': '25×3',  'width': 25, 'thickness': 3,  'area_mm2': 75,  'area_cm2': 0.075, 'current': 305},
+    {'spec': '25×4',  'width': 25, 'thickness': 4,  'area_mm2': 100, 'area_cm2': 0.10, 'current': 370},
+    {'spec': '30×3',  'width': 30, 'thickness': 3,  'area_mm2': 90,  'area_cm2': 0.09, 'current': 355},
+    {'spec': '30×4',  'width': 30, 'thickness': 4,  'area_mm2': 120, 'area_cm2': 0.12, 'current': 420},
+    {'spec': '40×4',  'width': 40, 'thickness': 4,  'area_mm2': 160, 'area_cm2': 0.16, 'current': 560},
+    {'spec': '40×5',  'width': 40, 'thickness': 5,  'area_mm2': 200, 'area_cm2': 0.20, 'current': 615},
+    {'spec': '50×5',  'width': 50, 'thickness': 5,  'area_mm2': 250, 'area_cm2': 0.25, 'current': 755},
+    {'spec': '60×6',  'width': 60, 'thickness': 6,  'area_mm2': 360, 'area_cm2': 0.36, 'current': 990},
+    {'spec': '60×8',  'width': 60, 'thickness': 8,  'area_mm2': 480, 'area_cm2': 0.48, 'current': 1160},
+    {'spec': '80×8',  'width': 80, 'thickness': 8,  'area_mm2': 640, 'area_cm2': 0.64, 'current': 1490},
+    {'spec': '80×10', 'width': 80, 'thickness': 10, 'area_mm2': 800, 'area_cm2': 0.80, 'current': 1670},
+    {'spec': '100×10', 'width': 100, 'thickness': 10, 'area_mm2': 1000, 'area_cm2': 1.00, 'current': 2030},
+    {'spec': '120×10', 'width': 120, 'thickness': 10, 'area_mm2': 1200, 'area_cm2': 1.20, 'current': 2330},
 ]
 
 @st.cache_data
@@ -1407,12 +1411,40 @@ def save_calc_log(copper_price, cabinets, results):
         for log in logs:
             f.write(json.dumps(log, ensure_ascii=False) + '\n')
 
-    # 写入通知文件，CostCalc机器人心跳检测后通过Telegram发送给张东方
+    # 生成报价摘要并发送Telegram通知
+    if TELEGRAM_NOTIFY:
+        try:
+            summary_lines = []
+            total_all = 0
+            for cab, result in zip(cabinets, results):
+                summary_lines.append(f"📦 {cab.get('name','')} ({cab.get('type','')} {cab.get('width',0)}m)")
+                summary_lines.append(f"   元器件: ¥{result['comp_cost']:.0f}  铜排: ¥{result['copper_cost']:.0f}  电缆: ¥{result['cable_cost']:.0f}")
+                summary_lines.append(f"   辅材: ¥{result['accessory_cost']:.0f}  箱体: ¥{result['cabinet_cost']:.0f}  成套费: ¥{result['total_profit']:.0f}")
+                summary_lines.append(f"   💰 含税: ¥{result['grand_total']:.0f}")
+                total_all += result['grand_total']
+            msg = f"🧾 配电设备成本报价\n⏰ {entry['timestamp']}\n🔩 铜价: ¥{copper_price:.2f}/kg\n\n" + "\n".join(summary_lines) + f"\n\n📊 项目合计含税: ¥{total_all:.0f}"
+            
+            # 元器件清单（第二条消息，避免太长）
+            comp_lines = []
+            for cab in cabinets:
+                comp_lines.append(f"【{cab.get('name','')}】")
+                for c in cab.get('components', []):
+                    if c.get('qty', 0) > 0:
+                        comp_lines.append(f"  {c.get('model','')} ×{c['qty']}  ¥{c.get('unit_price',0):.0f}  {c.get('brand','')}")
+            comp_msg = "📋 元器件清单\n\n" + "\n".join(comp_lines)
+            
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+            requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": msg}, timeout=10)
+            requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": comp_msg}, timeout=10)
+        except Exception as e:
+            pass  # 发送失败不影响计算
+
+    # 写入通知文件（心跳备用）
     notify_file = Path(__file__).parent / "data" / ".calc_notify"
     notify_file.write_text(json.dumps({
         "timestamp": entry["timestamp"],
         "copper_price": copper_price,
-        "cabinets": [{"name": c["name"], "components": c.get("components",[]), "result": r} for c, r in zip(cabinets, results)]
+        "cabinets": [{"name": c["name"], "result": r} for c, r in zip(cabinets, results)]
     }, ensure_ascii=False))
 
 
