@@ -16,6 +16,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime
 import openpyxl
+import requests
+
+# Telegram通知配置
+TELEGRAM_BOT_TOKEN = "8626932429:AAE8Muk7WSPgqgJQlvyg5PcLPqaFoByyUHk"
+TELEGRAM_CHAT_ID = "7473762677"  # 张东方
+TELEGRAM_NOTIFY = True  # 设为False可关闭通知
 
 # ─── 配置 ───────────────────────────────────────────────
 st.set_page_config(
@@ -1405,35 +1411,39 @@ def save_calc_log(copper_price, cabinets, results):
         for log in logs:
             f.write(json.dumps(log, ensure_ascii=False) + '\n')
 
-    # 写入通知文件，触发CostCalc机器人通过Telegram发送给张东方
+    # 生成报价摘要并发送Telegram通知
+    if TELEGRAM_NOTIFY:
+        try:
+            summary_lines = []
+            total_all = 0
+            for cab, result in zip(cabinets, results):
+                summary_lines.append(f"📦 {cab.get('name','')} ({cab.get('type','')} {cab.get('width',0)}m)")
+                summary_lines.append(f"   元器件: ¥{result['comp_cost']:.0f}  铜排: ¥{result['copper_cost']:.0f}  电缆: ¥{result['cable_cost']:.0f}")
+                summary_lines.append(f"   辅材: ¥{result['accessory_cost']:.0f}  箱体: ¥{result['cabinet_cost']:.0f}  成套费: ¥{result['total_profit']:.0f}")
+                summary_lines.append(f"   💰 含税: ¥{result['grand_total']:.0f}")
+                total_all += result['grand_total']
+            msg = f"🧾 配电设备成本报价\n⏰ {entry['timestamp']}\n🔩 铜价: ¥{copper_price:.2f}/kg\n\n" + "\n".join(summary_lines) + f"\n\n📊 项目合计含税: ¥{total_all:.0f}"
+            
+            # 元器件清单（第二条消息，避免太长）
+            comp_lines = []
+            for cab in cabinets:
+                comp_lines.append(f"【{cab.get('name','')}】")
+                for c in cab.get('components', []):
+                    if c.get('qty', 0) > 0:
+                        comp_lines.append(f"  {c.get('model','')} ×{c['qty']}  ¥{c.get('unit_price',0):.0f}  {c.get('brand','')}")
+            comp_msg = "📋 元器件清单\n\n" + "\n".join(comp_lines)
+            
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+            requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": msg}, timeout=10)
+            requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": comp_msg}, timeout=10)
+        except Exception as e:
+            pass  # 发送失败不影响计算
+
+    # 写入通知文件（心跳备用）
     notify_file = Path(__file__).parent / "data" / ".calc_notify"
-    # 生成报价摘要
-    summary_lines = []
-    total_all = 0
-    for cab, result in zip(cabinets, results):
-        summary_lines.append(f"📦 {cab.get('name','')} ({cab.get('type','')} {cab.get('width',0)}m)")
-        summary_lines.append(f"   元器件: ¥{result['comp_cost']:.0f}  铜排: ¥{result['copper_cost']:.0f}  电缆: ¥{result['cable_cost']:.0f}")
-        summary_lines.append(f"   辅材: ¥{result['accessory_cost']:.0f}  箱体: ¥{result['cabinet_cost']:.0f}  成套费: ¥{result['total_profit']:.0f}")
-        summary_lines.append(f"   💰 含税: ¥{result['grand_total']:.0f}")
-        total_all += result['grand_total']
-    summary_lines.insert(0, f"🧾 配电设备成本报价 - {entry['timestamp']}")
-    summary_lines.insert(1, f"铜价: ¥{copper_price:.2f}/kg")
-    summary_lines.append(f"")
-    summary_lines.append(f"📊 项目合计含税: ¥{total_all:.0f}")
-    
-    # 元器件清单
-    comp_lines = []
-    for cab in cabinets:
-        comp_lines.append(f"\n【{cab.get('name','')}】")
-        for c in cab.get('components', []):
-            if c.get('qty', 0) > 0:
-                comp_lines.append(f"  {c.get('model','')} ×{c['qty']}  ¥{c.get('unit_price',0):.0f}  {c.get('brand','')}")
-    
     notify_file.write_text(json.dumps({
         "timestamp": entry["timestamp"],
         "copper_price": copper_price,
-        "summary": "\n".join(summary_lines),
-        "components": "\n".join(comp_lines),
         "cabinets": [{"name": c["name"], "result": r} for c, r in zip(cabinets, results)]
     }, ensure_ascii=False))
 
