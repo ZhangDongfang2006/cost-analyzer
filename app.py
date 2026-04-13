@@ -1439,13 +1439,6 @@ def save_calc_log(copper_price, cabinets, results):
         except Exception as e:
             pass  # 发送失败不影响计算
 
-    # 写入通知文件（心跳备用）
-    notify_file = Path(__file__).parent / "data" / ".calc_notify"
-    notify_file.write_text(json.dumps({
-        "timestamp": entry["timestamp"],
-        "copper_price": copper_price,
-        "cabinets": [{"name": c["name"], "components": c.get("components",[]), "result": r} for c, r in zip(cabinets, results)]
-    }, ensure_ascii=False))
 
 
 def run_project_report(cabinet_list: list, copper_price: float):
